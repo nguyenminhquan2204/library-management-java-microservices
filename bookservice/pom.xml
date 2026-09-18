@@ -80,6 +80,11 @@
 			<artifactId>guava</artifactId>
 			<version>33.2.1-jre</version>
 		</dependency>
+		<dependency>
+			<groupId>com.javamicroservices</groupId>
+			<artifactId>commonservice</artifactId>
+			<version>0.0.1-SNAPSHOT</version>
+		</dependency>
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>
