@@ -17,6 +17,8 @@ import com.javamicroservices.bookservice.command.command.DeleteBookCommand;
 import com.javamicroservices.bookservice.command.command.UpdateBookCommand;
 import com.javamicroservices.bookservice.command.model.BookRequestModel;
 
+import jakarta.validation.Valid;
+
 @RestController 
 @RequestMapping ("/api/v1/books")
 public class BookCommandController {
@@ -24,7 +26,7 @@ public class BookCommandController {
     private CommandGateway commandGateway;
 
     @PostMapping 
-    public String addBook(@RequestBody BookRequestModel model) {
+    public String addBook(@Valid @RequestBody BookRequestModel model) {
         CreateBookCommand command = new CreateBookCommand(
             UUID.randomUUID().toString(), 
             model.getName(), 
