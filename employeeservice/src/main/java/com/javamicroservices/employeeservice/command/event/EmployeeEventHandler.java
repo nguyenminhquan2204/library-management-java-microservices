@@ -1,5 +1,7 @@
 package com.javamicroservices.employeeservice.command.event;
 
+import java.util.Optional;
+
 import org.axonframework.eventhandling.EventHandler;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -7,6 +9,8 @@ import org.springframework.stereotype.Component;
 
 import com.javamicroservices.employeeservice.command.data.Employee;
 import com.javamicroservices.employeeservice.command.data.EmployeeRepository;
+
+import jakarta.ws.rs.NotFoundException;
 
 @Component 
 public class EmployeeEventHandler {
@@ -18,5 +22,18 @@ public class EmployeeEventHandler {
         Employee employee = new Employee();
         BeanUtils.copyProperties(event, employee);
         employeeRepository.save(employee);
+    }
+
+    @EventHandler 
+    public void on(EmployeeUpdatedEvent event) {
+        Employee employee = employeeRepository.findById(event.getId()).orElseThrow(() -> new NotFoundException("Employee not found"));
+        BeanUtils.copyProperties(event, employee);
+        employeeRepository.save(employee);
+    }
+
+    @EventHandler 
+    public void on(EmployeeDeletedEvent event) {
+        Employee employee = employeeRepository.findById(event.getId()).orElseThrow(() -> new NotFoundException("Employee not found"));
+        employeeRepository.delete(employee);
     }
 }
