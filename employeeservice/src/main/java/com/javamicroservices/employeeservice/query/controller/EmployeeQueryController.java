@@ -15,12 +15,31 @@ import com.javamicroservices.employeeservice.query.model.EmployeeResponseModel;
 import com.javamicroservices.employeeservice.query.queries.GetAllEmployeeQuery;
 import com.javamicroservices.employeeservice.query.queries.GetDetailEmployeeQuery;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @RestController
 @RequestMapping("/api/v1/employees")
+@Tag(name = "Employee Query")
 public class EmployeeQueryController {
     @Autowired 
     private QueryGateway queryGateway;
     
+    @Operation(
+        summary = "Get List Employee",
+        description = "Get endpoint for employee with filter",
+        responses = {
+            @ApiResponse(
+                description = "Success",
+                responseCode = "200"
+            ),
+            @ApiResponse(
+                description = "Unauthorize / Invalid Token",
+                responseCode = "401"
+            )
+        }
+    )
     @GetMapping 
     public List<EmployeeResponseModel> getAllEmployee(@RequestParam(defaultValue = "false") Boolean isDisciplined) {
         return queryGateway.query(new GetAllEmployeeQuery(isDisciplined), ResponseTypes.multipleInstancesOf(EmployeeResponseModel.class)).join();
