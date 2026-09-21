@@ -15,31 +15,41 @@ import org.springframework.web.bind.annotation.RestController;
 import com.javamicroservices.employeeservice.command.command.CreateEmployeeCommand;
 import com.javamicroservices.employeeservice.command.command.DeleteEmployeeCommand;
 import com.javamicroservices.employeeservice.command.command.UpdateEmployeeCommand;
+import com.javamicroservices.employeeservice.command.data.EmployeeRepository;
 import com.javamicroservices.employeeservice.command.model.CreateEmployeeModel;
 import com.javamicroservices.employeeservice.command.model.UpdateEmployeeModel;
 
 import jakarta.validation.Valid;
 
-@RestController 
+@RestController
 @RequestMapping("/api/v1/employees")
 public class EmployeeCommandController {
-    @Autowired 
+    @Autowired
     private CommandGateway commandGateway;
 
-    @PostMapping 
+    @Autowired
+    private EmployeeRepository employeeRepository;
+
+    @PostMapping
     public String addEmployee(@Valid @RequestBody CreateEmployeeModel model) {
         CreateEmployeeCommand command = new CreateEmployeeCommand(UUID.randomUUID().toString(), model.getFirstName(), model.getLastName(), model.getKin(), false);
         return commandGateway.sendAndWait(command);
     }
 
     @PutMapping("/{employeeId}")
-    public String updateEmployee(@Valid @RequestBody UpdateEmployeeModel model, @PathVariable String employeeId) {
+    public String updateEmployee(@Valid @RequestBody UpdateEmployeeModel model, @PathVariable String employeeId) throws Exception {
+        if (!employeeRepository.existsById(employeeId)) {
+            throw new Exception("Employee not found");
+        }
         UpdateEmployeeCommand command = new UpdateEmployeeCommand(employeeId, model.getFirstName(), model.getLastName(), model.getKin(), model.getIsDisciplined());
         return commandGateway.sendAndWait(command);
     }
 
     @DeleteMapping("/{employeeId}")
-    public String deleteEmployee(@PathVariable String employeeId) {
+    public String deleteEmployee(@PathVariable String employeeId) throws Exception {
+        if (!employeeRepository.existsById(employeeId)) {
+            throw new Exception("Employee not found");
+        }
         DeleteEmployeeCommand command = new DeleteEmployeeCommand(employeeId);
         return commandGateway.sendAndWait(command);
     }

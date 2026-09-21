@@ -26,7 +26,7 @@ public class EmployeeEventHandler {
     }
 
     @EventHandler 
-    public void on(EmployeeUpdatedEvent event) {
+    public void on(EmployeeUpdatedEvent event) throws Exception {
         Employee employee = employeeRepository.findById(event.getId()).orElseThrow(() -> new NotFoundException("Employee not found"));
         BeanUtils.copyProperties(event, employee);
         employeeRepository.save(employee);
@@ -34,7 +34,7 @@ public class EmployeeEventHandler {
 
     @EventHandler 
     @DisallowReplay 
-    public void on(EmployeeDeletedEvent event) {
+    public void on(EmployeeDeletedEvent event) throws Exception {
         try {
             Employee employee = employeeRepository.findById(event.getId()).orElseThrow(() -> new Exception("Employee not found"));
             employeeRepository.delete(employee);

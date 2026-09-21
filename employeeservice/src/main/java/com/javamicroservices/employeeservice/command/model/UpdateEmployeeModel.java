@@ -17,7 +17,7 @@ public class UpdateEmployeeModel {
     private String lastName;
 
     @NotBlank(message = "Kin is mandatory")
-    private String Kin;
+    private String kin;
 
     @NotNull(message = "IsDisciplined is mandatory")
     private Boolean isDisciplined;

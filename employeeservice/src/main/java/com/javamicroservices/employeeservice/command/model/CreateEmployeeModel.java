@@ -16,5 +16,5 @@ public class CreateEmployeeModel {
     private String lastName;
 
     @NotBlank(message = "Kin is mandatory")
-    private String Kin;
+    private String kin;
 }
