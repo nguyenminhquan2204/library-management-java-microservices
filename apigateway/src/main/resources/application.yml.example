@@ -22,6 +22,7 @@ spring:
                           predicates:
                             - Path=/api/v1/employees/**
                           filters:
+                            - name: KeyAuthFilter
                             - name: RequestRateLimiter
                               args:
                                 redis-rate-limiter.replenishRate: 10
