@@ -1,5 +1,7 @@
 package com.javamicroservices.borrowingservice.command.event;
 
+import java.util.Optional;
+
 import org.axonframework.eventhandling.EventHandler;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,5 +20,11 @@ public class BorrowingEventsHandler {
         Borrowing model = new Borrowing();
         BeanUtils.copyProperties(event, model);
         borrowingRepository.save(model);
+    }
+
+    @EventHandler 
+    public void on(BorrowingDeletedEvent event) {
+        Optional<Borrowing> oldEntity = borrowingRepository.findById(event.getId());
+        oldEntity.ifPresent(borrowing -> borrowingRepository.delete(borrowing));
     }
 }
