@@ -1,10 +1,10 @@
-package com.javamicroservices.borrowsingservice;
+package com.javamicroservices.borrowingservice;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class BorrowsingserviceApplicationTests {
+class BorrowingserviceApplicationTests {
 
 	@Test
 	void contextLoads() {

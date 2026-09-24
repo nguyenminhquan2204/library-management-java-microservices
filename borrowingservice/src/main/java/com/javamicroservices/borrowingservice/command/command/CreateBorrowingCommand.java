@@ -1,21 +1,18 @@
-package com.javamicroservices.borrowingservice.command.data;
+package com.javamicroservices.borrowingservice.command.command;
 
 import java.util.Date;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-@Entity 
-@Table (name = "borrowing")
 @Data 
 @AllArgsConstructor 
 @NoArgsConstructor 
-public class Borrowing {
-    @Id 
+public class CreateBorrowingCommand {
+    @TargetAggregateIdentifier 
     private String id;
 
     private String bookId;
@@ -23,6 +20,4 @@ public class Borrowing {
     private String employeeId;
 
     private Date borrowingDate;
-
-    private Date returnDate;
 }

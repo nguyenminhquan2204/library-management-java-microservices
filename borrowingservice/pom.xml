@@ -9,7 +9,7 @@
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.javamicroservices</groupId>
-	<artifactId>borrowsingservice</artifactId>
+	<artifactId>borrowingservice</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name/>
 	<description/>
