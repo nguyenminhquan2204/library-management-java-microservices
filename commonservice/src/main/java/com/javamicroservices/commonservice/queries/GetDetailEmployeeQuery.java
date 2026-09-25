@@ -1,4 +1,4 @@
-package com.javamicroservices.employeeservice.query.queries;
+package com.javamicroservices.commonservice.queries;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

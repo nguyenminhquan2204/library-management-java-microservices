@@ -11,9 +11,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.javamicroservices.commonservice.model.EmployeeResponseCommonModel;
+import com.javamicroservices.commonservice.queries.GetDetailEmployeeQuery;
 import com.javamicroservices.employeeservice.query.model.EmployeeResponseModel;
 import com.javamicroservices.employeeservice.query.queries.GetAllEmployeeQuery;
-import com.javamicroservices.employeeservice.query.queries.GetDetailEmployeeQuery;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -46,7 +47,7 @@ public class EmployeeQueryController {
     }
 
     @GetMapping("/{employeeId}")
-    public EmployeeResponseModel getDetailEmployee(@PathVariable String employeeId) {
-        return queryGateway.query(new GetDetailEmployeeQuery(employeeId), ResponseTypes.instanceOf(EmployeeResponseModel.class)).join();
+    public EmployeeResponseCommonModel getDetailEmployee(@PathVariable String employeeId) {
+        return queryGateway.query(new GetDetailEmployeeQuery(employeeId), ResponseTypes.instanceOf(EmployeeResponseCommonModel.class)).join();
     }
 }

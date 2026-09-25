@@ -9,7 +9,9 @@ import com.javamicroservices.bookservice.command.command.UpdateBookCommand;
 import com.javamicroservices.bookservice.command.event.BookCreatedEvent;
 import com.javamicroservices.bookservice.command.event.BookDeletedEvent;
 import com.javamicroservices.bookservice.command.event.BookUpdatedEvent;
+import com.javamicroservices.commonservice.command.RollBackBookStatusCommand;
 import com.javamicroservices.commonservice.command.UpdateStatusBookCommand;
+import com.javamicroservices.commonservice.event.BookRollBackStatusEvent;
 import com.javamicroservices.commonservice.event.BookUpdateStatusEvent;
 
 import org.axonframework.commandhandling.CommandHandler;
@@ -60,6 +62,13 @@ public class BookAggregate {
         AggregateLifecycle.apply(event);
     }
 
+    @CommandHandler 
+    public void handle(RollBackBookStatusCommand command) {
+        BookRollBackStatusEvent event = new BookRollBackStatusEvent();
+        BeanUtils.copyProperties(command, event);
+        AggregateLifecycle.apply(event);
+    }
+
     @EventSourcingHandler 
     public void on(BookCreatedEvent event) {
         this.id = event.getId();
@@ -83,6 +92,12 @@ public class BookAggregate {
 
     @EventSourcingHandler 
     public void on(BookUpdateStatusEvent event) {
+        this.id = event.getBookId();
+        this.isReady = event.getIsReady();
+    }
+
+    @EventSourcingHandler 
+    public void on(BookRollBackStatusEvent event) {
         this.id = event.getBookId();
         this.isReady = event.getIsReady();
     }

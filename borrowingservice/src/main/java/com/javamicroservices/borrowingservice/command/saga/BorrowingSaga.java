@@ -1,8 +1,8 @@
 package com.javamicroservices.borrowingservice.command.saga;
 
 import org.axonframework.commandhandling.gateway.CommandGateway;
-import org.axonframework.messaging.responsetypes.ResponseType;
 import org.axonframework.messaging.responsetypes.ResponseTypes;
+import org.axonframework.modelling.saga.EndSaga;
 import org.axonframework.modelling.saga.SagaEventHandler;
 import org.axonframework.modelling.saga.SagaLifecycle;
 import org.axonframework.modelling.saga.StartSaga;
@@ -12,10 +12,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import com.javamicroservices.borrowingservice.command.command.DeleteBorrowingCommand;
 import com.javamicroservices.borrowingservice.command.event.BorrowingCreatedEvent;
+import com.javamicroservices.borrowingservice.command.event.BorrowingDeletedEvent;
+import com.javamicroservices.commonservice.command.RollBackBookStatusCommand;
 import com.javamicroservices.commonservice.command.UpdateStatusBookCommand;
+import com.javamicroservices.commonservice.event.BookRollBackStatusEvent;
 import com.javamicroservices.commonservice.event.BookUpdateStatusEvent;
 import com.javamicroservices.commonservice.model.BookResponseCommonModel;
+import com.javamicroservices.commonservice.model.EmployeeResponseCommonModel;
 import com.javamicroservices.commonservice.queries.GetBookDetailQuery;
+import com.javamicroservices.commonservice.queries.GetDetailEmployeeQuery;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -52,13 +57,43 @@ public class BorrowingSaga {
 
     @SagaEventHandler(associationProperty = "bookId")
     private void handle(BookUpdateStatusEvent event) {
-        log.info("BookUpdateStatusEvent in Sage for bookId: " + event.getBookId());
-        SagaLifecycle.end();
+        log.info("BookUpdateStatusEvent in Saga for bookId: " + event.getBookId());
+        
+        try {
+            GetDetailEmployeeQuery query = new GetDetailEmployeeQuery(event.getEmployeeId());
+            EmployeeResponseCommonModel employeeModel = queryGateway.query(query, ResponseTypes.instanceOf(EmployeeResponseCommonModel.class)).join();
+            if(employeeModel.getIsDisciplined()) {
+                throw new Exception("This employee is blocked");
+            } else {
+                log.info("Borrowing book is successfully!");
+                SagaLifecycle.end();
+            }
+        } catch (Exception e) {
+            rollbackBookStatus(event.getBookId(), event.getEmployeeId(), event.getBorrowingId());
+            log.error(e.getMessage());
+        }
     }
 
     private void rollbackBorrowingRecord(String id) {
         DeleteBorrowingCommand command = new DeleteBorrowingCommand(id);
         commandGateway.sendAndWait(command);
-        SagaLifecycle.end();
+    }
+
+    private void rollbackBookStatus(String bookId, String employeeId, String borrowingId) {
+        SagaLifecycle.associateWith("bookId", bookId);
+        RollBackBookStatusCommand command = new RollBackBookStatusCommand(bookId, true, employeeId, borrowingId);
+        commandGateway.sendAndWait(command);
+    }
+
+    @SagaEventHandler(associationProperty = "bookId")
+    private void handle(BookRollBackStatusEvent event) {
+        log.info("BookRollBackStatusEvent in saga for bookId {}" + event.getBookId());
+        rollbackBorrowingRecord(event.getBorrowingId());
+    }
+
+    @SagaEventHandler(associationProperty = "id")
+    @EndSaga 
+    private void handle(BorrowingDeletedEvent event) {
+        log.info("BorrowingDeletedEvent in Sage for borrowingId {}" + event.getId());
     }
 }
