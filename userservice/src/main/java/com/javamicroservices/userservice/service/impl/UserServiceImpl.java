@@ -1,10 +1,13 @@
 package com.javamicroservices.userservice.service.impl;
 
 import com.javamicroservices.userservice.dto.CreateUserRequestDTO;
+import com.javamicroservices.userservice.dto.LoginRequestDTO;
 import com.javamicroservices.userservice.dto.UserResponseDTO;
 import com.javamicroservices.userservice.dto.identity.Credential;
 import com.javamicroservices.userservice.dto.identity.TokenExchangeParam;
+import com.javamicroservices.userservice.dto.identity.TokenExchangeResponse;
 import com.javamicroservices.userservice.dto.identity.UserCreationParam;
+import com.javamicroservices.userservice.dto.identity.UserTokenExchangeParam;
 import com.javamicroservices.userservice.entity.User;
 import com.javamicroservices.userservice.repository.IdentityClient;
 import com.javamicroservices.userservice.repository.UserRepository;
@@ -111,6 +114,19 @@ public class UserServiceImpl implements IUserService {
     @Override
     public void deleteUser(Long id) {
         userRepository.deleteById(id);
+    }
+
+    @Override 
+    public TokenExchangeResponse login(LoginRequestDTO dto) {
+        var token = identityClient.exchangeUserToken(UserTokenExchangeParam.builder()
+                .grant_type("client_credentials")
+                .client_secret(clientSecret)
+                .client_id(clientId)
+                .scope("openid")
+                .username(dto.getUsername())
+                .password(dto.getPassword())
+                .build());
+        return token;
     }
 
     private UserResponseDTO toDTO(User user) {

@@ -3,7 +3,8 @@ package com.javamicroservices.userservice.repository;
 import com.javamicroservices.userservice.dto.identity.TokenExchangeParam;
 import com.javamicroservices.userservice.dto.identity.TokenExchangeResponse;
 import com.javamicroservices.userservice.dto.identity.UserCreationParam;
-import feign.Body;
+import com.javamicroservices.userservice.dto.identity.UserTokenExchangeParam;
+
 import feign.QueryMap;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.MediaType;
@@ -26,4 +27,10 @@ public interface IdentityClient {
             consumes = MediaType.APPLICATION_JSON_VALUE
     )
     ResponseEntity<?> createUser(@RequestBody() UserCreationParam body, @RequestHeader("authorization") String token);
+
+    @PostMapping(
+            value = "/realms/javamicroservice/protocol/openid-connect/token",
+            consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE
+    )
+    TokenExchangeResponse exchangeUserToken(@QueryMap UserTokenExchangeParam param);
 }
