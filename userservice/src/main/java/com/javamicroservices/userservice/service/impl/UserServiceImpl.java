@@ -41,35 +41,35 @@ public class UserServiceImpl implements IUserService {
 
     @Override
     public UserResponseDTO createUser(CreateUserRequestDTO dto) {
-        // var token = identityClient.exchangeClientToken(TokenExchangeParam.builder()
-        //         .grant_type("client_credentials")
-        //         .client_secret(clientSecret)
-        //         .client_id(clientId)
-        //         .scope("openid")
-        //         .build());
+        var token = identityClient.exchangeClientToken(TokenExchangeParam.builder()
+                .grant_type("client_credentials")
+                .client_secret(clientSecret)
+                .client_id(clientId)
+                .scope("openid")
+                .build());
 
-        // log.info("Token info",token);
-        // var creationResponse = identityClient.createUser(UserCreationParam.builder()
-        //         .username(dto.getUsername())
-        //         .firstName(dto.getFirstName())
-        //         .lastName(dto.getLastName())
-        //         .lastName(dto.getLastName())
-        //         .email(dto.getEmail())
-        //         .enabled(true)
-        //         .emailVerified(false)
-        //         .credentials(List.of(Credential.builder()
-        //                 .type("password")
-        //                 .temporary(false)
-        //                 .value(dto.getPassword())
-        //                 .build()))
-        //         .build(), "Bearer " + token.getAccessToken());
+        log.info("Token info {}", token);
+        var creationResponse = identityClient.createUser(UserCreationParam.builder()
+                .username(dto.getUsername())
+                .firstName(dto.getFirstName())
+                .lastName(dto.getLastName())
+                .lastName(dto.getLastName())
+                .email(dto.getEmail())
+                .enabled(true)
+                .emailVerified(false)
+                .credentials(List.of(Credential.builder()
+                        .type("password")
+                        .temporary(false)
+                        .value(dto.getPassword())
+                        .build()))
+                .build(), "Bearer " + token.getAccessToken());
 
-        // String userId = extractUserId(creationResponse);
-        // log.info("UserId {}", userId);
+        String userId = extractUserId(creationResponse);
+        log.info("UserId {}", userId);
 
         User user = new User();
-        // user.setUserId(userId);
-        user.setUserId(UUID.randomUUID().toString());
+        user.setUserId(userId);
+        // user.setUserId(UUID.randomUUID().toString());
         user.setEmail(dto.getEmail());
         user.setUsername(dto.getUsername());
         user.setFirstName(dto.getFirstName());

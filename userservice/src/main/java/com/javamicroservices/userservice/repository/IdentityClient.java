@@ -16,13 +16,13 @@ import org.springframework.web.bind.annotation.RequestHeader;
 public interface IdentityClient {
 
     @PostMapping(
-            value = "/realms/ltfullstack/protocol/openid-connect/token",
+            value = "/realms/javamicroservice/protocol/openid-connect/token",
             consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE
     )
     TokenExchangeResponse exchangeClientToken(@QueryMap() TokenExchangeParam param);
 
     @PostMapping(
-            value = "admin/realms/ltfullstack/users",
+            value = "admin/realms/javamicroservice/users",
             consumes = MediaType.APPLICATION_JSON_VALUE
     )
     ResponseEntity<?> createUser(@RequestBody() UserCreationParam body, @RequestHeader("authorization") String token);
