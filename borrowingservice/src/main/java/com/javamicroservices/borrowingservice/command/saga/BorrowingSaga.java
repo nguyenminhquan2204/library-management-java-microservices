@@ -94,6 +94,6 @@ public class BorrowingSaga {
     @SagaEventHandler(associationProperty = "id")
     @EndSaga 
     private void handle(BorrowingDeletedEvent event) {
-        log.info("BorrowingDeletedEvent in Sage for borrowingId {}" + event.getId());
+        log.info("BorrowingDeletedEvent in Saga for borrowingId {}" + event.getId());
     }
 }
