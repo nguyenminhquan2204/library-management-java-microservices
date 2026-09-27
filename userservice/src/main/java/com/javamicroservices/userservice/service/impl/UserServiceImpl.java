@@ -119,7 +119,7 @@ public class UserServiceImpl implements IUserService {
     @Override 
     public TokenExchangeResponse login(LoginRequestDTO dto) {
         var token = identityClient.exchangeUserToken(UserTokenExchangeParam.builder()
-                .grant_type("client_credentials")
+                .grant_type("password")
                 .client_secret(clientSecret)
                 .client_id(clientId)
                 .scope("openid")
