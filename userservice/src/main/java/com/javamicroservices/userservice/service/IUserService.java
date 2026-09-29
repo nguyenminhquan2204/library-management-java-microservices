@@ -2,6 +2,7 @@ package com.javamicroservices.userservice.service;
 
 import com.javamicroservices.userservice.dto.CreateUserRequestDTO;
 import com.javamicroservices.userservice.dto.LoginRequestDTO;
+import com.javamicroservices.userservice.dto.RefreshTokenRequestDTO;
 import com.javamicroservices.userservice.dto.UserResponseDTO;
 import com.javamicroservices.userservice.dto.identity.TokenExchangeResponse;
 
@@ -14,4 +15,5 @@ public interface IUserService {
     UserResponseDTO updateUser(Long id, CreateUserRequestDTO dto);
     void deleteUser(Long id);
     TokenExchangeResponse login(LoginRequestDTO dto);
+    TokenExchangeResponse refreshToken(RefreshTokenRequestDTO dto);
 }

@@ -2,6 +2,7 @@ package com.javamicroservices.userservice.service.impl;
 
 import com.javamicroservices.userservice.dto.CreateUserRequestDTO;
 import com.javamicroservices.userservice.dto.LoginRequestDTO;
+import com.javamicroservices.userservice.dto.RefreshTokenRequestDTO;
 import com.javamicroservices.userservice.dto.UserResponseDTO;
 import com.javamicroservices.userservice.dto.identity.Credential;
 import com.javamicroservices.userservice.dto.identity.TokenExchangeParam;
@@ -141,6 +142,21 @@ public class UserServiceImpl implements IUserService {
                     .build());
         } catch (FeignException.Unauthorized | FeignException.BadRequest ex) {
             throw new UnauthorizedException("Invalid username or password");
+        }
+    }
+
+    @Override 
+    public TokenExchangeResponse refreshToken(RefreshTokenRequestDTO dto) {
+        try {
+            return identityClient.exchangeUserToken(UserTokenExchangeParam.builder()
+                    .grant_type("refresh_token")
+                    .client_secret(clientSecret)
+                    .client_id(clientId)
+                    .refresh_token(dto.getRefreshToken())
+                    .scope("openid")
+                    .build());
+        } catch (FeignException.Unauthorized | FeignException.BadRequest ex) {
+            throw new UnauthorizedException("Invalid or expired refresh token");
         }
     }
 

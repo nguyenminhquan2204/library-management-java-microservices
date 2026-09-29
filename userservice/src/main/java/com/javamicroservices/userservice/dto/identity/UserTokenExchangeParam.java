@@ -24,4 +24,6 @@ public class UserTokenExchangeParam {
     String client_secret;
 
     String scope;
+
+    String refresh_token;
 }
