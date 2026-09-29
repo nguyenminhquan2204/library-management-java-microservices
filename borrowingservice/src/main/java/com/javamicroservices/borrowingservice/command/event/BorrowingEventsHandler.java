@@ -27,4 +27,22 @@ public class BorrowingEventsHandler {
         Optional<Borrowing> oldEntity = borrowingRepository.findById(event.getId());
         oldEntity.ifPresent(borrowing -> borrowingRepository.delete(borrowing));
     }
+
+    @EventHandler
+    public void on(BorrowingUpdatedEvent event) {
+        Optional<Borrowing> oldEntity = borrowingRepository.findById(event.getId());
+        oldEntity.ifPresent(borrowing -> {
+            BeanUtils.copyProperties(event, borrowing);
+            borrowingRepository.save(borrowing);
+        });
+    }
+
+    @EventHandler
+    public void on(BorrowingReturedEvent event) {
+        Optional<Borrowing> oldEntity = borrowingRepository.findById(event.getId());
+        oldEntity.ifPresent(borrowing -> {
+            borrowing.setReturnDate(event.getReturnDate());
+            borrowingRepository.save(borrowing);
+        });
+    }
 }

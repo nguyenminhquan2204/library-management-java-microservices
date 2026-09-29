@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import com.javamicroservices.borrowingservice.command.command.DeleteBorrowingCommand;
 import com.javamicroservices.borrowingservice.command.event.BorrowingCreatedEvent;
 import com.javamicroservices.borrowingservice.command.event.BorrowingDeletedEvent;
+import com.javamicroservices.borrowingservice.command.event.BorrowingReturedEvent;
 import com.javamicroservices.commonservice.command.RollBackBookStatusCommand;
 import com.javamicroservices.commonservice.command.UpdateStatusBookCommand;
 import com.javamicroservices.commonservice.event.BookRollBackStatusEvent;
@@ -91,8 +92,23 @@ public class BorrowingSaga {
         rollbackBorrowingRecord(event.getBorrowingId());
     }
 
+    @StartSaga
     @SagaEventHandler(associationProperty = "id")
-    @EndSaga 
+    private void handle(BorrowingReturedEvent event) {
+        log.info("BorrowingReturedEvent in saga for BookId: " + event.getBookId() + " : EmployeeId: " + event.getEmployeeId());
+
+        try {
+            UpdateStatusBookCommand command = new UpdateStatusBookCommand(event.getBookId(), true, event.getEmployeeId(), event.getId());
+            commandGateway.sendAndWait(command);
+        } catch (Exception e) {
+            log.error(e.getMessage());
+        } finally {
+            SagaLifecycle.end();
+        }
+    }
+
+    @SagaEventHandler(associationProperty = "id")
+    @EndSaga
     private void handle(BorrowingDeletedEvent event) {
         log.info("BorrowingDeletedEvent in Saga for borrowingId {}" + event.getId());
     }

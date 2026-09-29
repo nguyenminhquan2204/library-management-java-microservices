@@ -9,7 +9,8 @@ import org.springframework.stereotype.Component;
 import com.javamicroservices.employeeservice.command.data.Employee;
 import com.javamicroservices.employeeservice.command.data.EmployeeRepository;
 
-import jakarta.ws.rs.NotFoundException;
+import com.javamicroservices.commonservice.exception.NotFoundException;
+
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j 
