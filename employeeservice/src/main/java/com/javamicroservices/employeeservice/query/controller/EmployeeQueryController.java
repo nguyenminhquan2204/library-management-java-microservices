@@ -11,43 +11,45 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.javamicroservices.commonservice.model.ApiResponse;
 import com.javamicroservices.commonservice.model.EmployeeResponseCommonModel;
 import com.javamicroservices.commonservice.queries.GetDetailEmployeeQuery;
 import com.javamicroservices.employeeservice.query.model.EmployeeResponseModel;
 import com.javamicroservices.employeeservice.query.queries.GetAllEmployeeQuery;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/v1/employees")
 @Tag(name = "Employee Query")
 public class EmployeeQueryController {
-    @Autowired 
+    @Autowired
     private QueryGateway queryGateway;
-    
+
     @Operation(
         summary = "Get List Employee",
         description = "Get endpoint for employee with filter",
         responses = {
-            @ApiResponse(
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                 description = "Success",
                 responseCode = "200"
             ),
-            @ApiResponse(
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                 description = "Unauthorize / Invalid Token",
                 responseCode = "401"
             )
         }
     )
-    @GetMapping 
-    public List<EmployeeResponseModel> getAllEmployee(@RequestParam(defaultValue = "false") Boolean isDisciplined) {
-        return queryGateway.query(new GetAllEmployeeQuery(isDisciplined), ResponseTypes.multipleInstancesOf(EmployeeResponseModel.class)).join();
+    @GetMapping
+    public ApiResponse<List<EmployeeResponseModel>> getAllEmployee(@RequestParam(defaultValue = "false") Boolean isDisciplined) {
+        List<EmployeeResponseModel> results = queryGateway.query(new GetAllEmployeeQuery(isDisciplined), ResponseTypes.multipleInstancesOf(EmployeeResponseModel.class)).join();
+        return ApiResponse.success("Get all employees successfully", results);
     }
 
     @GetMapping("/{employeeId}")
-    public EmployeeResponseCommonModel getDetailEmployee(@PathVariable String employeeId) {
-        return queryGateway.query(new GetDetailEmployeeQuery(employeeId), ResponseTypes.instanceOf(EmployeeResponseCommonModel.class)).join();
+    public ApiResponse<EmployeeResponseCommonModel> getDetailEmployee(@PathVariable String employeeId) {
+        EmployeeResponseCommonModel result = queryGateway.query(new GetDetailEmployeeQuery(employeeId), ResponseTypes.instanceOf(EmployeeResponseCommonModel.class)).join();
+        return ApiResponse.success("Get employee detail successfully", result);
     }
 }

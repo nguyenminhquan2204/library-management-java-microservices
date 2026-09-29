@@ -4,6 +4,8 @@ import java.util.UUID;
 
 import org.axonframework.commandhandling.gateway.CommandGateway;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.javamicroservices.commonservice.model.ApiResponse;
 import com.javamicroservices.employeeservice.command.command.CreateEmployeeCommand;
 import com.javamicroservices.employeeservice.command.command.DeleteEmployeeCommand;
 import com.javamicroservices.employeeservice.command.command.UpdateEmployeeCommand;
@@ -20,27 +23,28 @@ import com.javamicroservices.employeeservice.command.model.UpdateEmployeeModel;
 
 import jakarta.validation.Valid;
 
-@RestController 
+@RestController
 @RequestMapping("/api/v1/employees")
 public class EmployeeCommandController {
-    @Autowired 
+    @Autowired
     private CommandGateway commandGateway;
 
-    @PostMapping 
-    public String addEmployee(@Valid @RequestBody CreateEmployeeModel model) {
+    @PostMapping
+    public ResponseEntity<ApiResponse<String>> addEmployee(@Valid @RequestBody CreateEmployeeModel model) {
         CreateEmployeeCommand command = new CreateEmployeeCommand(UUID.randomUUID().toString(), model.getFirstName(), model.getLastName(), model.getKin(), false);
-        return commandGateway.sendAndWait(command);
+        String employeeId = commandGateway.sendAndWait(command);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created("Employee created successfully", employeeId));
     }
 
     @PutMapping("/{employeeId}")
-    public String updateEmployee(@Valid @RequestBody UpdateEmployeeModel model, @PathVariable String employeeId) {
+    public ApiResponse<String> updateEmployee(@Valid @RequestBody UpdateEmployeeModel model, @PathVariable String employeeId) {
         UpdateEmployeeCommand command = new UpdateEmployeeCommand(employeeId, model.getFirstName(), model.getLastName(), model.getKin(), model.getIsDisciplined());
-        return commandGateway.sendAndWait(command);
+        return ApiResponse.success("Employee updated successfully", commandGateway.sendAndWait(command));
     }
 
     @DeleteMapping("/{employeeId}")
-    public String deleteEmployee(@PathVariable String employeeId) {
+    public ApiResponse<String> deleteEmployee(@PathVariable String employeeId) {
         DeleteEmployeeCommand command = new DeleteEmployeeCommand(employeeId);
-        return commandGateway.sendAndWait(command);
+        return ApiResponse.success("Employee deleted successfully", commandGateway.sendAndWait(command));
     }
 }

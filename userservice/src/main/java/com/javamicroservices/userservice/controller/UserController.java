@@ -1,9 +1,11 @@
 package com.javamicroservices.userservice.controller;
 
+import com.javamicroservices.userservice.dto.ApiResponse;
 import com.javamicroservices.userservice.dto.CreateUserRequestDTO;
 import com.javamicroservices.userservice.dto.UserResponseDTO;
 import com.javamicroservices.userservice.service.IUserService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,28 +19,28 @@ public class UserController {
     private IUserService userService;
 
     @PostMapping
-    public ResponseEntity<UserResponseDTO> createUser(@RequestBody CreateUserRequestDTO dto) {
-        return ResponseEntity.ok(userService.createUser(dto));
+    public ResponseEntity<ApiResponse<UserResponseDTO>> createUser(@RequestBody CreateUserRequestDTO dto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created("User created successfully", userService.createUser(dto)));
     }
 
     @GetMapping
-    public ResponseEntity<List<UserResponseDTO>> getAllUsers() {
-        return ResponseEntity.ok(userService.getAllUsers());
+    public ResponseEntity<ApiResponse<List<UserResponseDTO>>> getAllUsers() {
+        return ResponseEntity.ok(ApiResponse.success("Get all users successfully", userService.getAllUsers()));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<UserResponseDTO> getUserById(@PathVariable Long id) {
-        return ResponseEntity.ok(userService.getUserById(id));
+    public ResponseEntity<ApiResponse<UserResponseDTO>> getUserById(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Get user detail successfully", userService.getUserById(id)));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<UserResponseDTO> updateUser(@PathVariable Long id, @RequestBody CreateUserRequestDTO dto) {
-        return ResponseEntity.ok(userService.updateUser(id, dto));
+    public ResponseEntity<ApiResponse<UserResponseDTO>> updateUser(@PathVariable Long id, @RequestBody CreateUserRequestDTO dto) {
+        return ResponseEntity.ok(ApiResponse.success("User updated successfully", userService.updateUser(id, dto)));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<Void>> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(ApiResponse.success("User deleted successfully", null));
     }
 }

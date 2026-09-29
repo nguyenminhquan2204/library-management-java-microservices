@@ -1,32 +1,29 @@
 package com.javamicroservices.commonservice.advise;
 
-import com.javamicroservices.commonservice.model.ErrorMessage;
+import com.javamicroservices.commonservice.model.ApiResponse;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
-@ControllerAdvice 
+@ControllerAdvice
 public class ExceptionAdvice {
-    
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, String>> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach(error -> {
-            String fieldName = ((org.springframework.validation.FieldError) error).getField();
-            String message = error.getDefaultMessage();
-            errors.put(fieldName, message);
-        });
-        return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
+    public ResponseEntity<ApiResponse<Void>> handleValidationExceptions(MethodArgumentNotValidException ex) {
+        List<String> details = ex.getBindingResult().getAllErrors().stream()
+            .map(error -> ((FieldError) error).getField() + ": " + error.getDefaultMessage())
+            .toList();
+        return new ResponseEntity<>(ApiResponse.badRequest("Validation failed", details), HttpStatus.BAD_REQUEST);
     }
 
-    @ExceptionHandler 
-    public ResponseEntity<ErrorMessage> handleException(Exception ex) {
-        return new ResponseEntity(new ErrorMessage("9999", ex.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR), HttpStatus.INTERNAL_SERVER_ERROR);
+    @ExceptionHandler
+    public ResponseEntity<ApiResponse<Void>> handleException(Exception ex) {
+        return new ResponseEntity<>(ApiResponse.error(ex.getMessage()), HttpStatus.INTERNAL_SERVER_ERROR);
     }
 }

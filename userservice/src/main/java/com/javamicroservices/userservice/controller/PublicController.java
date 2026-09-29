@@ -7,19 +7,20 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.javamicroservices.userservice.dto.ApiResponse;
 import com.javamicroservices.userservice.dto.LoginRequestDTO;
 import com.javamicroservices.userservice.dto.identity.TokenExchangeResponse;
 import com.javamicroservices.userservice.service.IUserService;
 
-@RestController 
+@RestController
 @RequestMapping("/api/v1/public")
 public class PublicController {
 
-    @Autowired 
+    @Autowired
     private IUserService userService;
 
     @PostMapping("/login")
-    public ResponseEntity<TokenExchangeResponse> login(@RequestBody LoginRequestDTO body) {
-        return ResponseEntity.ok(userService.login(body));
+    public ResponseEntity<ApiResponse<TokenExchangeResponse>> login(@RequestBody LoginRequestDTO body) {
+        return ResponseEntity.ok(ApiResponse.success("Login successfully", userService.login(body)));
     }
 }
