@@ -1,14 +1,12 @@
-package com.javamicroservices.commonservice.advise;
+package com.javamicroservices.userservice.exception;
 
-import com.javamicroservices.commonservice.exception.AppException;
-import com.javamicroservices.commonservice.exception.ErrorDetail;
-import com.javamicroservices.commonservice.model.ApiResponse;
+import com.javamicroservices.userservice.dto.ApiResponse;
+
+import feign.FeignException;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutionException;
 
-import org.axonframework.messaging.HandlerExecutionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -16,24 +14,22 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
-import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-import lombok.extern.slf4j.Slf4j;
-
 @Slf4j
-@ControllerAdvice
-public class ExceptionAdvice {
+@RestControllerAdvice
+public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         List<String> details = ex.getBindingResult().getAllErrors().stream()
-            .map(error -> error instanceof FieldError fieldError
-                ? fieldError.getField() + ": " + error.getDefaultMessage()
-                : error.getDefaultMessage())
-            .toList();
+                .map(error -> error instanceof FieldError fieldError
+                        ? fieldError.getField() + ": " + error.getDefaultMessage()
+                        : error.getDefaultMessage())
+                .toList();
         return build(HttpStatus.BAD_REQUEST, ApiResponse.badRequest("Validation failed", details));
     }
 
@@ -63,31 +59,16 @@ public class ExceptionAdvice {
     }
 
     /**
-     * Lỗi từ command/query handler (qua Axon) - lấy status code từ ErrorDetail nếu có.
+     * Lỗi 4xx từ Identity Provider (Keycloak) chưa được service xử lý riêng.
      */
-    @ExceptionHandler(HandlerExecutionException.class)
-    public ResponseEntity<ApiResponse<Void>> handleAxonException(HandlerExecutionException ex) {
-        Object details = ex.getDetails().orElse(null);
-        if (details instanceof ErrorDetail errorDetail) {
-            HttpStatus status = HttpStatus.valueOf(errorDetail.getStatusCode());
-            return build(status, ofStatus(status, errorDetail.getMessage()));
+    @ExceptionHandler(FeignException.class)
+    public ResponseEntity<ApiResponse<Void>> handleFeignException(FeignException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.status());
+        if (status == null || !status.is4xxClientError()) {
+            return handleException(ex);
         }
-        return handleException(ex);
-    }
-
-    /**
-     * queryGateway.query(...).join() / .get() bọc exception gốc trong CompletionException / ExecutionException.
-     */
-    @ExceptionHandler({ CompletionException.class, ExecutionException.class })
-    public ResponseEntity<ApiResponse<Void>> handleWrappedException(Exception ex) {
-        Throwable cause = ex.getCause();
-        if (cause instanceof HandlerExecutionException handlerEx) {
-            return handleAxonException(handlerEx);
-        }
-        if (cause instanceof AppException appEx) {
-            return handleAppException(appEx);
-        }
-        return handleException(ex);
+        log.warn("Identity provider returned {}: {}", ex.status(), ex.contentUTF8());
+        return build(status, ofStatus(status, "Identity provider error: " + status.getReasonPhrase()));
     }
 
     @ExceptionHandler
@@ -98,7 +79,7 @@ public class ExceptionAdvice {
 
     private ApiResponse<Void> ofStatus(HttpStatus status, String message) {
         return ApiResponse.ofError(status.value(), message, status.getReasonPhrase());
-    } 
+    }
 
     private ResponseEntity<ApiResponse<Void>> build(HttpStatus status, ApiResponse<Void> body) {
         return new ResponseEntity<>(body, status);

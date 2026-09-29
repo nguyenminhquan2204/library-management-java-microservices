@@ -16,6 +16,8 @@ import com.javamicroservices.borrowingservice.command.command.CreateBorrowingCom
 import com.javamicroservices.borrowingservice.command.model.BorrowingCreateModel;
 import com.javamicroservices.commonservice.model.ApiResponse;
 
+import jakarta.validation.Valid;
+
 @RestController
 @RequestMapping("/api/v1/borrowing")
 public class BorrowingCommandController {
@@ -24,7 +26,7 @@ public class BorrowingCommandController {
     private CommandGateway commandGateway;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<String>> createBorrowing(@RequestBody BorrowingCreateModel model) {
+    public ResponseEntity<ApiResponse<String>> createBorrowing(@Valid @RequestBody BorrowingCreateModel model) {
         CreateBorrowingCommand command = new CreateBorrowingCommand(UUID.randomUUID().toString(), model.getBookId(), model.getEmployeeId(), new Date());
         String borrowingId = commandGateway.sendAndWait(command);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created("Borrowing created successfully", borrowingId));

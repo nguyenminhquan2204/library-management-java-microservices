@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import com.javamicroservices.bookservice.command.data.BookRepository;
 import com.javamicroservices.bookservice.query.model.BookResponseModel;
 import com.javamicroservices.bookservice.query.queries.GetAllBookQuery;
+import com.javamicroservices.commonservice.exception.NotFoundException;
 import com.javamicroservices.commonservice.model.BookResponseCommonModel;
 import com.javamicroservices.commonservice.queries.GetBookDetailQuery;
 import com.javamicroservices.bookservice.command.data.Book;
@@ -33,9 +34,9 @@ public class BookProjection {
     }
 
     @QueryHandler 
-    public BookResponseCommonModel handle(GetBookDetailQuery query) throws Exception {
+    public BookResponseCommonModel handle(GetBookDetailQuery query) {
         BookResponseCommonModel bookResponseModel = new BookResponseCommonModel();
-        Book book = bookRepository.findById(query.getId()).orElseThrow(() -> new Exception("Book not found with BookId: " + query.getId()));
+        Book book = bookRepository.findById(query.getId()).orElseThrow(() -> new NotFoundException("Book not found with BookId: " + query.getId()));
         BeanUtils.copyProperties(book, bookResponseModel);
         return bookResponseModel;
     }

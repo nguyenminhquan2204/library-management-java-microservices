@@ -41,7 +41,7 @@ public class BookCommandController {
     }
 
     @PutMapping("/{bookId}")
-    public ApiResponse<String> updateBook(@RequestBody BookRequestModel model, @PathVariable String bookId) {
+    public ApiResponse<String> updateBook(@Valid @RequestBody BookRequestModel model, @PathVariable String bookId) {
         UpdateBookCommand command = new UpdateBookCommand(
             bookId,
             model.getName(),

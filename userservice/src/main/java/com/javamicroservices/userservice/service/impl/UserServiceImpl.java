@@ -9,10 +9,14 @@ import com.javamicroservices.userservice.dto.identity.TokenExchangeResponse;
 import com.javamicroservices.userservice.dto.identity.UserCreationParam;
 import com.javamicroservices.userservice.dto.identity.UserTokenExchangeParam;
 import com.javamicroservices.userservice.entity.User;
+import com.javamicroservices.userservice.exception.ConflictException;
+import com.javamicroservices.userservice.exception.NotFoundException;
+import com.javamicroservices.userservice.exception.UnauthorizedException;
 import com.javamicroservices.userservice.repository.IdentityClient;
 import com.javamicroservices.userservice.repository.UserRepository;
 
 import com.javamicroservices.userservice.service.IUserService;
+import feign.FeignException;
 import lombok.experimental.NonFinal;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,7 +56,9 @@ public class UserServiceImpl implements IUserService {
                 .build());
 
         log.info("Token info {}", token);
-        var creationResponse = identityClient.createUser(UserCreationParam.builder()
+        ResponseEntity<?> creationResponse;
+        try {
+            creationResponse = identityClient.createUser(UserCreationParam.builder()
                 .username(dto.getUsername())
                 .firstName(dto.getFirstName())
                 .lastName(dto.getLastName())
@@ -66,6 +72,9 @@ public class UserServiceImpl implements IUserService {
                         .value(dto.getPassword())
                         .build()))
                 .build(), "Bearer " + token.getAccessToken());
+        } catch (FeignException.Conflict ex) {
+            throw new ConflictException("Username or email already exists");
+        }
 
         String userId = extractUserId(creationResponse);
         log.info("UserId {}", userId);
@@ -92,14 +101,14 @@ public class UserServiceImpl implements IUserService {
     @Override
     public UserResponseDTO getUserById(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+                .orElseThrow(() -> new NotFoundException("User not found with id: " + id));
         return toDTO(user);
     }
 
     @Override
     public UserResponseDTO updateUser(Long id, CreateUserRequestDTO dto) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+                .orElseThrow(() -> new NotFoundException("User not found with id: " + id));
 
         user.setEmail(dto.getEmail());
         user.setUsername(dto.getUsername());
@@ -113,20 +122,26 @@ public class UserServiceImpl implements IUserService {
 
     @Override
     public void deleteUser(Long id) {
+        if (!userRepository.existsById(id)) {
+            throw new NotFoundException("User not found with id: " + id);
+        }
         userRepository.deleteById(id);
     }
 
-    @Override 
+    @Override
     public TokenExchangeResponse login(LoginRequestDTO dto) {
-        var token = identityClient.exchangeUserToken(UserTokenExchangeParam.builder()
-                .grant_type("password")
-                .client_secret(clientSecret)
-                .client_id(clientId)
-                .scope("openid")
-                .username(dto.getUsername())
-                .password(dto.getPassword())
-                .build());
-        return token;
+        try {
+            return identityClient.exchangeUserToken(UserTokenExchangeParam.builder()
+                    .grant_type("password")
+                    .client_secret(clientSecret)
+                    .client_id(clientId)
+                    .scope("openid")
+                    .username(dto.getUsername())
+                    .password(dto.getPassword())
+                    .build());
+        } catch (FeignException.Unauthorized | FeignException.BadRequest ex) {
+            throw new UnauthorizedException("Invalid username or password");
+        }
     }
 
     private UserResponseDTO toDTO(User user) {

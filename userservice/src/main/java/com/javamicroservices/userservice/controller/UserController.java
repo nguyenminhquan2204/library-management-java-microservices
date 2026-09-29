@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
 import java.util.List;
 
@@ -19,7 +20,7 @@ public class UserController {
     private IUserService userService;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<UserResponseDTO>> createUser(@RequestBody CreateUserRequestDTO dto) {
+    public ResponseEntity<ApiResponse<UserResponseDTO>> createUser(@Valid @RequestBody CreateUserRequestDTO dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created("User created successfully", userService.createUser(dto)));
     }
 

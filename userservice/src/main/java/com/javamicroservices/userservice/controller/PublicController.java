@@ -12,6 +12,8 @@ import com.javamicroservices.userservice.dto.LoginRequestDTO;
 import com.javamicroservices.userservice.dto.identity.TokenExchangeResponse;
 import com.javamicroservices.userservice.service.IUserService;
 
+import jakarta.validation.Valid;
+
 @RestController
 @RequestMapping("/api/v1/public")
 public class PublicController {
@@ -20,7 +22,7 @@ public class PublicController {
     private IUserService userService;
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<TokenExchangeResponse>> login(@RequestBody LoginRequestDTO body) {
+    public ResponseEntity<ApiResponse<TokenExchangeResponse>> login(@Valid @RequestBody LoginRequestDTO body) {
         return ResponseEntity.ok(ApiResponse.success("Login successfully", userService.login(body)));
     }
 }

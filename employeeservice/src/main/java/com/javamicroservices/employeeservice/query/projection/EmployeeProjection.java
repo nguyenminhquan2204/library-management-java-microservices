@@ -7,6 +7,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import com.javamicroservices.commonservice.exception.NotFoundException;
 import com.javamicroservices.commonservice.model.EmployeeResponseCommonModel;
 import com.javamicroservices.commonservice.queries.GetDetailEmployeeQuery;
 import com.javamicroservices.employeeservice.command.data.Employee;
@@ -30,8 +31,8 @@ public class EmployeeProjection {
     }
 
     @QueryHandler
-    public EmployeeResponseCommonModel handle(GetDetailEmployeeQuery query) throws Exception {
-        Employee employee = employeeRepository.findById(query.getId()).orElseThrow(() -> new Exception("Employee not found"));
+    public EmployeeResponseCommonModel handle(GetDetailEmployeeQuery query) {
+        Employee employee = employeeRepository.findById(query.getId()).orElseThrow(() -> new NotFoundException("Employee not found with EmployeeId: " + query.getId()));
         EmployeeResponseCommonModel model = new EmployeeResponseCommonModel();
         BeanUtils.copyProperties(employee, model);
         return model;
