@@ -4,13 +4,19 @@ import java.util.Date;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity 
-@Table (name = "borrowing")
+@Table(
+    name = "borrowing",
+    indexes = {
+        @Index(name = "idx_borrowing_employee_book_return", columnList = "employee_id, book_id, return_date")
+    }
+)
 @Data 
 @AllArgsConstructor 
 @NoArgsConstructor 

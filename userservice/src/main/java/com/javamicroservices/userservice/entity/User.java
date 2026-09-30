@@ -9,7 +9,12 @@ import lombok.Builder;
 import java.time.LocalDate;
 
 @Entity
-@Table(name = "users")
+@Table(
+    name = "users",
+    indexes = {
+        @Index(name = "uk_users_user_id", columnList = "user_id", unique = true)
+    }
+)
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
