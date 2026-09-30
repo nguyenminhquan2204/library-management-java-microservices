@@ -10,6 +10,11 @@ eureka:
 spring:
   application:
     name: userservice
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/javamicroservice
   datasource:
     url: jdbc:postgresql://localhost:5432/library_local
     username: edit this

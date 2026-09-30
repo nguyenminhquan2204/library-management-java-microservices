@@ -5,6 +5,7 @@ import java.util.List;
 import org.axonframework.messaging.responsetypes.ResponseTypes;
 import org.axonframework.queryhandling.QueryGateway;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,6 +24,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @RestController
 @RequestMapping("/api/v1/employees")
 @Tag(name = "Employee Query")
+@PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')")
 public class EmployeeQueryController {
     @Autowired
     private QueryGateway queryGateway;
