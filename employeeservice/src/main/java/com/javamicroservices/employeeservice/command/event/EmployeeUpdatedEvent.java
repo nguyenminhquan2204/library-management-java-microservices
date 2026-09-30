@@ -16,5 +16,7 @@ public class EmployeeUpdatedEvent {
 
     private String kin;
 
+    private String email;
+
     private Boolean isDisciplined;
 }

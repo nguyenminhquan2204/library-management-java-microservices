@@ -22,5 +22,7 @@ public class Employee {
 
     private String kin;
 
+    private String email;
+
     private Boolean isDisciplined;
 }

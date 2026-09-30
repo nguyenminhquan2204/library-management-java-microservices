@@ -19,4 +19,6 @@ public class BorrowingUpdatedEvent {
     private Date borrowingDate;
 
     private Date returnDate;
+
+    private Date dueDate;
 }

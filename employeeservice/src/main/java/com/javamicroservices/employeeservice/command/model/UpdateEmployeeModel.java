@@ -1,5 +1,6 @@
 package com.javamicroservices.employeeservice.command.model;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
@@ -18,6 +19,9 @@ public class UpdateEmployeeModel {
 
     @NotBlank(message = "Kin is mandatory")
     private String Kin;
+
+    @Email(message = "Email is invalid")
+    private String email;
 
     @NotNull(message = "IsDisciplined is mandatory")
     private Boolean isDisciplined;

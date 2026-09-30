@@ -20,6 +20,8 @@
 
 Điểm đặc trưng của dự án là áp dụng **CQRS + Event Sourcing** (thông qua Axon Framework) và **Saga pattern** để xử lý giao dịch phân tán khi mượn sách (phải kiểm tra sách còn hay không, nhân viên có đang bị kỷ luật/khoá hay không, và rollback nếu có lỗi ở bất kỳ bước nào).
 
+Mỗi phiếu mượn có **hạn trả**; một **cronjob** trong `borrowingservice` tự nhắc trước khi đến hạn, báo quá hạn và tính **tiền phạt**, rồi gửi email qua Kafka → `notificationservice` (chi tiết: [BORROWING_REMINDER.md](BORROWING_REMINDER.md)).
+
 Xác thực/uỷ quyền được tách riêng qua **Keycloak** (OAuth2/OIDC), API Gateway đứng trước để định tuyến, xác thực JWT, giới hạn tốc độ (rate limit) và forward thông tin người dùng xuống các service phía sau.
 
 Xét về mục đích, đây giống một dự án **học tập/thực hành kiến trúc microservices nâng cao** hơn là một sản phẩm production-ready: nó cố tình đưa vào gần như đầy đủ các "món" kinh điển của microservices (discovery, gateway, CQRS, event sourcing, saga, message queue với retry/DLQ, IdP riêng biệt) trên cùng một bài toán nghiệp vụ nhỏ (thư viện), rất phù hợp để đối chiếu lý thuyết với triển khai thực tế.
@@ -57,7 +59,7 @@ flowchart TB
 
     BS["bookservice :9001\n(CQRS)"]
     ES["employeeservice :9002\n(CQRS)"]
-    BOS["borrowingservice :9004\n(CQRS + Saga)"]
+    BOS["borrowingservice :9004\n(CQRS + Saga + Cronjob)"]
     US["userservice :9005\n(Postgres)"]
 
     US -- "Admin API\n(Feign)" --> KC
@@ -72,6 +74,7 @@ flowchart TB
 
     BS -- publish --> KFK
     AX -- publish --> KFK
+    BOS -- "publish (cronjob nhắc hạn / quá hạn)" --> KFK
     KFK[("Kafka + Zookeeper\n+ Control Center")]
     KFK --> NS["notificationservice :9003"]
     NS -- "SMTP" --> Mail[("Email server\n(Gmail SMTP)")]
@@ -89,8 +92,8 @@ flowchart TB
 | `apigateway` | 8080 | API Gateway / BFF, xác thực, rate-limit | — (Redis) | Spring Cloud Gateway WebFlux |
 | `bookservice` | 9001 | Quản lý sách (CQRS) | H2 in-memory (`bookDB`) | Aggregate: `BookAggregate` |
 | `employeeservice` | 9002 | Quản lý nhân viên (CQRS) | H2 in-memory (`employeeDB`) | Có Swagger/OpenAPI |
-| `notificationservice` | 9003 | Consumer Kafka, gửi email | — | Kafka consumer + Freemarker template |
-| `borrowingservice` | 9004 | Quản lý phiếu mượn (CQRS + Saga) | H2 in-memory (`borrowingDB`) | Điều phối `BorrowingSaga` |
+| `notificationservice` | 9003 | Consumer Kafka, gửi email | — | Kafka consumer + Freemarker template (chào mừng, nhắc hạn trả, quá hạn/tiền phạt) |
+| `borrowingservice` | 9004 | Quản lý phiếu mượn (CQRS + Saga) | H2 in-memory (`borrowingDB`) | Điều phối `BorrowingSaga`; cronjob `BorrowingReminderJob` nhắc hạn trả / tính tiền phạt |
 | `userservice` | 9005 | Quản lý user, đăng nhập, tích hợp Keycloak | PostgreSQL (`library_local`) | Gọi Keycloak Admin API qua Feign |
 | `commonservice` | — | Thư viện dùng chung (không chạy độc lập) | — | Exception, ApiResponse, Axon/Kafka/Mail config |
 
@@ -124,7 +127,8 @@ flowchart TB
 - **Spring Data JPA** — ORM cho các service có DB quan hệ
 
 ### Nhắn tin & thông báo
-- **Spring Kafka** — publish/consume sự kiện (topic `test`, `testEmail`, `emailTemplate`)
+- **Spring Kafka** — publish/consume sự kiện (topic `test`, `testEmail`, `emailTemplate`, `borrowing-notification`)
+- **Spring Scheduling** (`@Scheduled`) — cronjob nhắc hạn trả / báo quá hạn trong `borrowingservice`
 - **Spring Boot Starter Mail** + **FreeMarker** — soạn & gửi email (SMTP Gmail), có template `emailTemplate.ftl`
 
 ### Khác
@@ -209,6 +213,18 @@ Diễn giải từng bước:
 
 Đây là ví dụ **compensating transaction** (Saga orchestration) điển hình cho giao dịch xuyên nhiều service không dùng distributed transaction/2PC: thay vì khoá tài nguyên trên nhiều service cùng lúc, hệ thống chấp nhận trạng thái "tạm thời không nhất quán" rồi tự sửa (rollback) bằng một chuỗi command bù trừ nếu bước sau thất bại.
 
+### Hạn trả, quá hạn và tiền phạt (cronjob)
+
+Tài liệu đầy đủ: [BORROWING_REMINDER.md](BORROWING_REMINDER.md).
+
+- Khi tạo phiếu, `dueDate = ngày mượn + 14 ngày` (cấu hình `borrowing.policy.*`).
+- `BorrowingReminderJob` (`@Scheduled`, mặc định 8h sáng) quét read-model:
+  - **Sắp đến hạn** (trong 2 ngày tới) → `NotifyBorrowingDueSoonCommand` → nhắc **1 lần**.
+  - **Quá hạn** → `RecordBorrowingOverdueCommand` → aggregate tính `số ngày trễ × 5.000 VND` → báo **tối đa 1 lần/ngày**.
+- Aggregate quyết định có gửi hay không và lưu lại bằng event (`BorrowingDueSoonNotifiedEvent`, `BorrowingOverdueRecordedEvent`), nên chạy lại job hay chạy nhiều instance đều không gửi trùng. Chỉ khi command thành công, job mới publish `BorrowingNotificationMessage` (JSON) lên topic `borrowing-notification`.
+- Tiền phạt được **chốt** trong `BorrowingReturedEvent` khi trả sách.
+- `notificationservice` (`BorrowingNotificationConsumer`) render `borrowingDueSoon.ftl` / `borrowingOverdue.ftl` và gửi email tới `email` của nhân viên (trường mới của `employeeservice`). Có retry topic + DLT như các consumer khác.
+
 ## 6. Chuẩn hoá response & xử lý lỗi
 
 - `commonservice.model.ApiResponse<T>` — wrapper JSON thống nhất cho toàn hệ thống: `statusCode`, `message`, `data` (khi thành công), `error` + `details` (khi lỗi), `timestamp`. Có factory method sẵn: `success()`, `created()`, `notFound()`, `badRequest()`, `conflict()`, `unauthorized()`, `forbidden()`, `error()`.
@@ -253,12 +269,16 @@ Ví dụ response lỗi (validation):
 | GET | `/api/v1/books` | bookservice (query) | Lấy danh sách sách |
 | GET | `/api/v1/books/{bookId}` | bookservice (query) | Lấy chi tiết sách |
 | POST | `/api/v1/books/sendMessage` | bookservice (query) | Test gửi message Kafka |
-| POST | `/api/v1/employees` | employeeservice (command) | Tạo nhân viên |
+| POST | `/api/v1/employees` | employeeservice (command) | Tạo nhân viên (có `email` để nhận thông báo) |
 | PUT | `/api/v1/employees/{employeeId}` | employeeservice (command) | Cập nhật nhân viên |
 | DELETE | `/api/v1/employees/{employeeId}` | employeeservice (command) | Xoá nhân viên |
 | GET | `/api/v1/employees?isDisciplined=` | employeeservice (query) | Lấy danh sách nhân viên, lọc theo trạng thái kỷ luật |
 | GET | `/api/v1/employees/{employeeId}` | employeeservice (query) | Lấy chi tiết nhân viên |
-| POST | `/api/v1/borrowing` | borrowingservice (command) | Tạo phiếu mượn sách (kích hoạt saga) |
+| POST | `/api/v1/borrowing` | borrowingservice (command) | Tạo phiếu mượn sách (kích hoạt saga, tự gán hạn trả) |
+| PATCH | `/api/v1/borrowing/{borrowingId}` | borrowingservice (command) | Sửa phiếu mượn / gia hạn (`dueDate`) |
+| PATCH | `/api/v1/borrowing/{borrowingId}/return` | borrowingservice (command) | Trả sách (chốt tiền phạt nếu trả muộn) |
+| GET | `/api/v1/borrowing/employeeId/{employeeId}` | borrowingservice (query) | Danh sách phiếu mượn của nhân viên (kèm `dueDate`, `fineAmount`) |
+| POST | `/api/v1/borrowing/reminders/run` | borrowingservice (command) | ADMIN chạy ngay cronjob nhắc hạn / báo quá hạn |
 | POST | `/api/v1/public/login` | userservice | Đăng nhập (không cần JWT, đi qua Keycloak) |
 | POST | `/api/v1/users` | userservice | Tạo user (đăng ký, tạo cả trên Keycloak) |
 | GET | `/api/v1/users` | userservice | Lấy danh sách user |
@@ -275,7 +295,8 @@ Tất cả request qua `apigateway` (port `8080`) đều được route dựa tr
 3. `borrowingservice` tạo `Borrowing` aggregate, phát `BorrowingCreatedEvent` → lưu vào Axon Server.
 4. `BorrowingSaga` bắt sự kiện, gọi lần lượt `bookservice` (kiểm tra sách) rồi `employeeservice` (kiểm tra nhân viên) như mô tả ở mục 5; nếu một trong hai điều kiện không thoả, saga tự rollback bằng command bù trừ.
 5. Khi giao dịch thành công, một service (Book/Notification, tuỳ luồng thực tế) publish message lên Kafka (`testEmail` / `emailTemplate`).
-6. `notificationservice` (`EventConsumer`) tiêu thụ message, render email bằng FreeMarker (`emailTemplate.ftl`) hoặc template inline, gửi qua SMTP Gmail; nếu xử lý lỗi, message được đẩy qua **retry topic** (backoff nhân đôi, tối đa 3 lần retry) rồi cuối cùng vào **Dead Letter Topic (DLT)** nếu vẫn thất bại.
+6. Hằng ngày, `BorrowingReminderJob` kiểm tra các phiếu chưa trả: nhắc khi sắp đến hạn, báo quá hạn kèm tiền phạt tạm tính (publish lên topic `borrowing-notification`). Khi trả sách muộn, tiền phạt được chốt vào phiếu mượn.
+7. `notificationservice` (`EventConsumer`, `BorrowingNotificationConsumer`) tiêu thụ message, render email bằng FreeMarker (`emailTemplate.ftl`) hoặc template inline, gửi qua SMTP Gmail; nếu xử lý lỗi, message được đẩy qua **retry topic** (backoff nhân đôi, tối đa 3 lần retry) rồi cuối cùng vào **Dead Letter Topic (DLT)** nếu vẫn thất bại.
 
 ## 9. Hạ tầng & Triển khai
 
@@ -367,7 +388,7 @@ Trong lúc đọc cấu hình, phát hiện một số vấn đề nên xử lý
 codes/
 ├── apigateway/          # Spring Cloud Gateway, OAuth2, rate limit
 ├── bookservice/         # CQRS: quản lý sách
-├── borrowingservice/    # CQRS + Saga: quản lý phiếu mượn
+├── borrowingservice/    # CQRS + Saga: quản lý phiếu mượn + cronjob nhắc hạn / tiền phạt
 ├── commonservice/       # Thư viện dùng chung (exception, ApiResponse, Axon/Kafka/Mail config)
 ├── discoverserver/      # Eureka Server
 ├── employeeservice/     # CQRS: quản lý nhân viên
@@ -375,6 +396,8 @@ codes/
 ├── userservice/         # Quản lý user + tích hợp Keycloak (Postgres)
 ├── docker/              # Config bổ sung cho kafka, keycloak
 ├── scripts/deploy.sh    # Script deploy trên VPS qua SSH
+├── RBAC.md              # Tài liệu phân quyền theo vai trò (Keycloak)
+├── BORROWING_REMINDER.md # Tài liệu hạn trả, quá hạn, tiền phạt (cronjob)
 ├── docker-compose.yml           # Compose môi trường chính (app + Axon + Kafka + Redis)
 ├── docker-compose-provider.yml  # Compose riêng cho Keycloak
 ├── k8s.deployment.yaml          # Manifest K8s mẫu (chưa đầy đủ)

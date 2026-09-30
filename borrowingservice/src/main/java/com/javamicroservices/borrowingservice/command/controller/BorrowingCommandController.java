@@ -22,6 +22,9 @@ import com.javamicroservices.borrowingservice.command.model.BorrowingCreateModel
 import com.javamicroservices.borrowingservice.command.model.BorrowingReturnModel;
 import com.javamicroservices.borrowingservice.command.model.BorrowingUpdateModel;
 import com.javamicroservices.borrowingservice.command.model.BorrowingUpdateResponse;
+import com.javamicroservices.borrowingservice.configuration.BorrowingPolicy;
+import com.javamicroservices.borrowingservice.scheduler.BorrowingReminderJob;
+import com.javamicroservices.borrowingservice.scheduler.ReminderJobResult;
 import com.javamicroservices.commonservice.exception.ForbiddenException;
 import com.javamicroservices.commonservice.model.ApiResponse;
 import com.javamicroservices.commonservice.security.Roles;
@@ -36,10 +39,17 @@ public class BorrowingCommandController {
     @Autowired
     private CommandGateway commandGateway;
 
+    @Autowired
+    private BorrowingPolicy borrowingPolicy;
+
+    @Autowired
+    private BorrowingReminderJob borrowingReminderJob;
+
     @PostMapping
     public ResponseEntity<ApiResponse<String>> createBorrowing(@Valid @RequestBody BorrowingCreateModel model) {
         checkEmployeeOwnership(model.getEmployeeId());
-        CreateBorrowingCommand command = new CreateBorrowingCommand(UUID.randomUUID().toString(), model.getBookId(), model.getEmployeeId(), new Date());
+        Date borrowingDate = new Date();
+        CreateBorrowingCommand command = new CreateBorrowingCommand(UUID.randomUUID().toString(), model.getBookId(), model.getEmployeeId(), borrowingDate, borrowingPolicy.dueDateFrom(borrowingDate));
         String borrowingId = commandGateway.sendAndWait(command);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created("Borrowing created successfully", borrowingId));
     }
@@ -47,7 +57,7 @@ public class BorrowingCommandController {
     @PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')")
     @PatchMapping("/{borrowingId}")
     public ResponseEntity<ApiResponse<BorrowingUpdateResponse>> updateBorrowing(@PathVariable String borrowingId, @Valid @RequestBody BorrowingUpdateModel model) {
-        UpdateBorrowingCommand command = new UpdateBorrowingCommand(borrowingId, model.getBookId(), model.getEmployeeId(), model.getBorrowingDate(), model.getReturnDate());
+        UpdateBorrowingCommand command = new UpdateBorrowingCommand(borrowingId, model.getBookId(), model.getEmployeeId(), model.getBorrowingDate(), model.getReturnDate(), model.getDueDate());
         BorrowingUpdateResponse result = commandGateway.sendAndWait(command);
         return ResponseEntity.ok(ApiResponse.success("Borrowing updated successfully", result));
     }
@@ -59,6 +69,15 @@ public class BorrowingCommandController {
         ReturnBorrowingCommand command = new ReturnBorrowingCommand(borrowingId, model.getBookId(), model.getEmployeeId(), new Date());
         commandGateway.sendAndWait(command);
         return ResponseEntity.ok(ApiResponse.success("Return book successfully!", null));
+    }
+
+    /**
+     * Chạy ngay cronjob nhắc hạn trả / báo quá hạn (bình thường chạy theo lịch borrowing.reminder.cron).
+     */
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/reminders/run")
+    public ApiResponse<ReminderJobResult> runReminderJob() {
+        return ApiResponse.success("Borrowing reminder job executed", borrowingReminderJob.run());
     }
 
     /**

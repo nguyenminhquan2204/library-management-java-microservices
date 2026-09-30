@@ -19,5 +19,7 @@ public class CreateEmployeeCommand {
 
     private String kin;
 
+    private String email;
+
     private Boolean isDisciplined;
 }

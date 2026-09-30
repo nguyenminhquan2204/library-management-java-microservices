@@ -1,0 +1,4 @@
+spring.application.name=notificationservice
+server.port=9003
+spring.kafka.consumer.group-id=edit this
+axon.axonserver.servers=edit this

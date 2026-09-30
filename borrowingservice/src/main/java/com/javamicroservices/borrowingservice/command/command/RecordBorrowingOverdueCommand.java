@@ -11,17 +11,9 @@ import lombok.NoArgsConstructor;
 @Data 
 @AllArgsConstructor 
 @NoArgsConstructor 
-public class UpdateBorrowingCommand {
+public class RecordBorrowingOverdueCommand {
     @TargetAggregateIdentifier 
     private String id;
 
-    private String bookId;
-
-    private String employeeId;
-
-    private Date borrowingDate;
-
-    private Date returnDate;
-
-    private Date dueDate;
+    private Date checkedAt;
 }

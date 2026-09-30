@@ -16,5 +16,7 @@ public class EmployeeResponseModel {
 
     private String kin;
 
+    private String email;
+
     private Boolean isDisciplined;
 }

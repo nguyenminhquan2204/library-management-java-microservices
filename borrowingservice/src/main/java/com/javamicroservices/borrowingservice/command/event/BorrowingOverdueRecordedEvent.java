@@ -10,14 +10,12 @@ import lombok.NoArgsConstructor;
 @Data 
 @AllArgsConstructor 
 @NoArgsConstructor 
-public class BorrowingReturedEvent {
+public class BorrowingOverdueRecordedEvent {
     private String id;
-    
-    private String bookId;
 
-    private String employeeId;
-
-    private Date returnDate;
+    private long overdueDays;
 
     private BigDecimal fineAmount;
+
+    private Date recordedAt;
 }

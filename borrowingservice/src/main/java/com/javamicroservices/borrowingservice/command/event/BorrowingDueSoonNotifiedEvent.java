@@ -1,6 +1,5 @@
 package com.javamicroservices.borrowingservice.command.event;
 
-import java.math.BigDecimal;
 import java.util.Date;
 
 import lombok.AllArgsConstructor;
@@ -10,14 +9,8 @@ import lombok.NoArgsConstructor;
 @Data 
 @AllArgsConstructor 
 @NoArgsConstructor 
-public class BorrowingReturedEvent {
+public class BorrowingDueSoonNotifiedEvent {
     private String id;
-    
-    private String bookId;
 
-    private String employeeId;
-
-    private Date returnDate;
-
-    private BigDecimal fineAmount;
+    private Date notifiedAt;
 }

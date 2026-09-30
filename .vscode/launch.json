@@ -8,7 +8,8 @@
             "mainClass": "com.javamicroservices.discoverserver.DiscoverserverApplication",
             "projectName": "discoverserver",
             "args": "",
-            "envFile": "${workspaceFolder}/.env"
+            "envFile": "${workspaceFolder}/.env",
+            "vmArgs": " -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=53114 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dspring.jmx.enabled=true -Djava.rmi.server.hostname=localhost -Dspring.application.admin.enabled=true -Dspring.boot.project.name=discoverserver"
         },
         {
             "type": "java",
@@ -29,7 +30,8 @@
             "mainClass": "com.javamicroservices.apigateway.ApigatewayApplication",
             "projectName": "apigateway",
             "args": "",
-            "envFile": "${workspaceFolder}/.env"
+            "envFile": "${workspaceFolder}/.env",
+            "vmArgs": " -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=53141 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dspring.jmx.enabled=true -Djava.rmi.server.hostname=localhost -Dspring.application.admin.enabled=true -Dspring.boot.project.name=apigateway"
         },
         {
             "type": "java",
@@ -39,7 +41,8 @@
             "mainClass": "com.javamicroservices.bookservice.BookserviceApplication",
             "projectName": "bookservice",
             "args": "",
-            "envFile": "${workspaceFolder}/.env"
+            "envFile": "${workspaceFolder}/.env",
+            "vmArgs": " -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=53163 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dspring.jmx.enabled=true -Djava.rmi.server.hostname=localhost -Dspring.application.admin.enabled=true -Dspring.boot.project.name=bookservice"
         },
         {
             "type": "java",
@@ -49,7 +52,8 @@
             "mainClass": "com.javamicroservices.employeeservice.EmployeeserviceApplication",
             "projectName": "employeeservice",
             "args": "",
-            "envFile": "${workspaceFolder}/.env"
+            "envFile": "${workspaceFolder}/.env",
+            "vmArgs": " -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=53187 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dspring.jmx.enabled=true -Djava.rmi.server.hostname=localhost -Dspring.application.admin.enabled=true -Dspring.boot.project.name=employeeservice"
         },
         {
             "type": "java",
@@ -58,6 +62,17 @@
             "cwd": "${workspaceFolder}",
             "mainClass": "com.javamicroservices.userservice.UserserviceApplication",
             "projectName": "userservice",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env",
+            "vmArgs": " -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=52266 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dspring.jmx.enabled=true -Djava.rmi.server.hostname=localhost -Dspring.application.admin.enabled=true -Dspring.boot.project.name=userservice"
+        },
+        {
+            "type": "java",
+            "name": "Spring Boot-NotificationserviceApplication<notificationservice>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.javamicroservices.notificationservice.NotificationserviceApplication",
+            "projectName": "notificationservice",
             "args": "",
             "envFile": "${workspaceFolder}/.env"
         }

@@ -16,4 +16,6 @@ public class BorrowingCreatedEvent {
     private String employeeId;
 
     private Date borrowingDate;
+
+    private Date dueDate;
 }

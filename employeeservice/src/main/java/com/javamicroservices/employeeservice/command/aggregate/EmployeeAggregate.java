@@ -28,6 +28,8 @@ public class EmployeeAggregate {
 
     private String kin;
 
+    private String email;
+
     private Boolean isDisciplined;
 
     @CommandHandler 
@@ -57,6 +59,7 @@ public class EmployeeAggregate {
         this.firstName = event.getFirstName();
         this.lastName = event.getLastName();
         this.kin = event.getKin();
+        this.email = event.getEmail();
         this.isDisciplined = event.getIsDisciplined();
     }
 
@@ -66,6 +69,7 @@ public class EmployeeAggregate {
         this.firstName = event.getFirstName();
         this.lastName = event.getLastName();
         this.kin = event.getKin();
+        this.email = event.getEmail();
         this.isDisciplined = event.getIsDisciplined();
     }
 

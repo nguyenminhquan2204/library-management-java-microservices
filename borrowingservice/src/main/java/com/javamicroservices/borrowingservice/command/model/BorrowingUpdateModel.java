@@ -20,4 +20,7 @@ public class BorrowingUpdateModel {
     private Date borrowingDate;
 
     private Date returnDate;
+
+    // Hạn trả mới (gia hạn). Bỏ trống thì giữ nguyên hạn cũ
+    private Date dueDate;
 } 

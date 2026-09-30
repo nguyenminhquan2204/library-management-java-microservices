@@ -20,4 +20,6 @@ public class CreateBorrowingCommand {
     private String employeeId;
 
     private Date borrowingDate;
+
+    private Date dueDate;
 }

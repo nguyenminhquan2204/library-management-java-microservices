@@ -1,0 +1,27 @@
+spring.application.name=borrowingservice
+
+server.port=9004
+
+eureka.client.service-url.defaultZone=edit this
+
+spring.datasource.url=edit this
+spring.datasource.driverClassName=edit this
+spring.datasource.username=edit this
+spring.datasource.password=edit this
+spring.jpa.database-platform=edit this
+# Console giao diện của H2
+spring.h2.console.enabled=true
+# Cập nhật DB so với Schema
+spring.jpa.hibernate.ddl-auto=update
+
+spring.security.oauth2.resourceserver.jwt.issuer-uri=edit this
+
+spring.kafka.bootstrap-servers=edit this
+spring.kafka.consumer.group-id=edit this
+
+borrowing.policy.loan-days=edit this
+borrowing.policy.reminder-days-before=edit this
+borrowing.policy.fine-per-day=edit this
+borrowing.policy.currency=VND
+
+borrowing.reminder.cron=edit this

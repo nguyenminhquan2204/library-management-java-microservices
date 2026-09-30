@@ -1,5 +1,6 @@
 package com.javamicroservices.borrowingservice.command.event;
 
+import java.util.Objects;
 import java.util.Optional;
 
 import org.axonframework.eventhandling.EventHandler;
@@ -32,6 +33,10 @@ public class BorrowingEventsHandler {
     public void on(BorrowingUpdatedEvent event) {
         Optional<Borrowing> oldEntity = borrowingRepository.findById(event.getId());
         oldEntity.ifPresent(borrowing -> {
+            if (!Objects.equals(event.getDueDate(), borrowing.getDueDate())) {
+                // Gia hạn -> sẽ được nhắc lại theo hạn mới
+                borrowing.setDueSoonNotified(false);
+            }
             BeanUtils.copyProperties(event, borrowing);
             borrowingRepository.save(borrowing);
         });
@@ -42,6 +47,26 @@ public class BorrowingEventsHandler {
         Optional<Borrowing> oldEntity = borrowingRepository.findById(event.getId());
         oldEntity.ifPresent(borrowing -> {
             borrowing.setReturnDate(event.getReturnDate());
+            if (event.getFineAmount() != null) {
+                borrowing.setFineAmount(event.getFineAmount());
+            }
+            borrowingRepository.save(borrowing);
+        });
+    }
+
+    @EventHandler
+    public void on(BorrowingDueSoonNotifiedEvent event) {
+        borrowingRepository.findById(event.getId()).ifPresent(borrowing -> {
+            borrowing.setDueSoonNotified(true);
+            borrowingRepository.save(borrowing);
+        });
+    }
+
+    @EventHandler
+    public void on(BorrowingOverdueRecordedEvent event) {
+        borrowingRepository.findById(event.getId()).ifPresent(borrowing -> {
+            borrowing.setFineAmount(event.getFineAmount());
+            borrowing.setLastOverdueNotifiedAt(event.getRecordedAt());
             borrowingRepository.save(borrowing);
         });
     }

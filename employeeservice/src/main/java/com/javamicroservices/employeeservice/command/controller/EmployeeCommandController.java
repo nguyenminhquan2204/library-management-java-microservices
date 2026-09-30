@@ -33,14 +33,14 @@ public class EmployeeCommandController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<String>> addEmployee(@Valid @RequestBody CreateEmployeeModel model) {
-        CreateEmployeeCommand command = new CreateEmployeeCommand(UUID.randomUUID().toString(), model.getFirstName(), model.getLastName(), model.getKin(), false);
+        CreateEmployeeCommand command = new CreateEmployeeCommand(UUID.randomUUID().toString(), model.getFirstName(), model.getLastName(), model.getKin(), model.getEmail(), false);
         String employeeId = commandGateway.sendAndWait(command);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created("Employee created successfully", employeeId));
     }
 
     @PutMapping("/{employeeId}")
     public ApiResponse<String> updateEmployee(@Valid @RequestBody UpdateEmployeeModel model, @PathVariable String employeeId) {
-        UpdateEmployeeCommand command = new UpdateEmployeeCommand(employeeId, model.getFirstName(), model.getLastName(), model.getKin(), model.getIsDisciplined());
+        UpdateEmployeeCommand command = new UpdateEmployeeCommand(employeeId, model.getFirstName(), model.getLastName(), model.getKin(), model.getEmail(), model.getIsDisciplined());
         return ApiResponse.success("Employee updated successfully", commandGateway.sendAndWait(command));
     }
 
