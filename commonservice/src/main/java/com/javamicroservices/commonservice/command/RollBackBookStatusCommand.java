@@ -13,9 +13,10 @@ public class RollBackBookStatusCommand {
     @TargetAggregateIdentifier 
     private String bookId;
 
-    private boolean isReady;
+    // Tên field phải trùng với BookRollBackStatusEvent vì BookAggregate copy bằng BeanUtils.copyProperties
+    private Boolean isReady;
 
     private String employeeId;
 
-    private String borrowId;
+    private String borrowingId;
 }

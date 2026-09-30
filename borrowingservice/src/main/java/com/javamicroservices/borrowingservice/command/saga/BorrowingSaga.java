@@ -45,7 +45,6 @@ public class BorrowingSaga {
             if(!bookResponseCommonModel.getIsReady()) {
                 throw new Exception("Book is unavailable");
             } else {
-                SagaLifecycle.associateWith("bookId", event.getBookId());
                 UpdateStatusBookCommand command = new UpdateStatusBookCommand(event.getBookId(), false, event.getEmployeeId(), event.getId());
                 commandGateway.sendAndWait(command);
             }
@@ -56,10 +55,15 @@ public class BorrowingSaga {
         }
     }
 
-    @SagaEventHandler(associationProperty = "bookId")
+    // Liên kết theo borrowingId (key "id" của saga), không theo bookId: nhiều saga cùng một cuốn sách sẽ không nhận nhầm event của nhau
+    @SagaEventHandler(associationProperty = "borrowingId", keyName = "id")
     private void handle(BookUpdateStatusEvent event) {
         log.info("BookUpdateStatusEvent in Saga for bookId: " + event.getBookId());
-        
+        // isReady=true là event của luồng trả sách, không phải luồng mượn
+        if (Boolean.TRUE.equals(event.getIsReady())) {
+            return;
+        }
+
         try {
             GetDetailEmployeeQuery query = new GetDetailEmployeeQuery(event.getEmployeeId());
             EmployeeResponseCommonModel employeeModel = queryGateway.query(query, ResponseTypes.instanceOf(EmployeeResponseCommonModel.class)).join();
@@ -81,12 +85,11 @@ public class BorrowingSaga {
     }
 
     private void rollbackBookStatus(String bookId, String employeeId, String borrowingId) {
-        SagaLifecycle.associateWith("bookId", bookId);
         RollBackBookStatusCommand command = new RollBackBookStatusCommand(bookId, true, employeeId, borrowingId);
         commandGateway.sendAndWait(command);
     }
 
-    @SagaEventHandler(associationProperty = "bookId")
+    @SagaEventHandler(associationProperty = "borrowingId", keyName = "id")
     private void handle(BookRollBackStatusEvent event) {
         log.info("BookRollBackStatusEvent in saga for bookId {}" + event.getBookId());
         rollbackBorrowingRecord(event.getBorrowingId());
