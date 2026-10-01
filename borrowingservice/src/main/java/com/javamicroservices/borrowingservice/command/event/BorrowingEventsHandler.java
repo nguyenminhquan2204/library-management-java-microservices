@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import com.javamicroservices.borrowingservice.command.data.Borrowing;
 import com.javamicroservices.borrowingservice.command.data.BorrowingRepository;
+import com.javamicroservices.borrowingservice.command.data.BorrowingStatus;
 
 @Component 
 public class BorrowingEventsHandler {
@@ -20,13 +21,36 @@ public class BorrowingEventsHandler {
     public void on(BorrowingCreatedEvent event) {
         Borrowing model = new Borrowing();
         BeanUtils.copyProperties(event, model);
+        model.setStatus(BorrowingStatus.PENDING);
         borrowingRepository.save(model);
     }
 
-    @EventHandler 
-    public void on(BorrowingDeletedEvent event) {
-        Optional<Borrowing> oldEntity = borrowingRepository.findById(event.getId());
-        oldEntity.ifPresent(borrowing -> borrowingRepository.delete(borrowing));
+    @EventHandler
+    public void on(BorrowingConfirmedEvent event) {
+        borrowingRepository.findById(event.getId()).ifPresent(borrowing -> {
+            borrowing.setStatus(BorrowingStatus.CONFIRMED);
+            borrowing.setBookCopyId(event.getBookCopyId());
+            borrowing.setReservationId(event.getReservationId());
+            borrowingRepository.save(borrowing);
+        });
+    }
+
+    @EventHandler
+    public void on(BorrowingFailedEvent event) {
+        borrowingRepository.findById(event.getId()).ifPresent(borrowing -> {
+            borrowing.setStatus(BorrowingStatus.FAILED);
+            borrowing.setFailureReason(event.getReason());
+            borrowingRepository.save(borrowing);
+        });
+    }
+
+    @EventHandler
+    public void on(BorrowingCancelledEvent event) {
+        borrowingRepository.findById(event.getId()).ifPresent(borrowing -> {
+            borrowing.setStatus(BorrowingStatus.CANCELLED);
+            borrowing.setFailureReason(event.getReason());
+            borrowingRepository.save(borrowing);
+        });
     }
 
     @EventHandler
@@ -43,9 +67,10 @@ public class BorrowingEventsHandler {
     }
 
     @EventHandler
-    public void on(BorrowingReturedEvent event) {
+    public void on(BorrowingReturnedEvent event) {
         Optional<Borrowing> oldEntity = borrowingRepository.findById(event.getId());
         oldEntity.ifPresent(borrowing -> {
+            borrowing.setStatus(BorrowingStatus.RETURNED);
             borrowing.setReturnDate(event.getReturnDate());
             if (event.getFineAmount() != null) {
                 borrowing.setFineAmount(event.getFineAmount());

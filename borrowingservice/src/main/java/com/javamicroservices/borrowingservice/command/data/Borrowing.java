@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.util.Date;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
@@ -16,7 +18,7 @@ import lombok.NoArgsConstructor;
     name = "borrowing",
     indexes = {
         @Index(name = "idx_borrowing_employee_book_return", columnList = "employee_id, book_id, return_date"),
-        @Index(name = "idx_borrowing_return_due", columnList = "return_date, due_date")
+        @Index(name = "idx_borrowing_status_due", columnList = "status, due_date")
     }
 )
 @Data
@@ -28,7 +30,18 @@ public class Borrowing {
 
     private String bookId;
 
+    private String bookCopyId;
+
     private String employeeId;
+
+    @Enumerated(EnumType.STRING)
+    private BorrowingStatus status;
+
+    // Trace saga: lần giữ bản sao thành công
+    private String reservationId;
+
+    // Lý do FAILED / CANCELLED
+    private String failureReason;
 
     private Date borrowingDate;
 

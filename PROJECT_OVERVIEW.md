@@ -18,7 +18,9 @@
 
 Đây là một hệ thống **microservices** viết bằng Java/Spring Boot, mô phỏng nghiệp vụ **quản lý thư viện**: quản lý sách (`bookservice`), quản lý nhân viên (`employeeservice`), quản lý phiếu mượn sách (`borrowingservice`), quản lý người dùng/xác thực (`userservice`), gửi thông báo email (`notificationservice`), cùng các thành phần hạ tầng dùng chung: service discovery (`discoverserver`), API gateway (`apigateway`) và một thư viện dùng chung (`commonservice`).
 
-Điểm đặc trưng của dự án là áp dụng **CQRS + Event Sourcing** (thông qua Axon Framework) và **Saga pattern** để xử lý giao dịch phân tán khi mượn sách (phải kiểm tra sách còn hay không, nhân viên có đang bị kỷ luật/khoá hay không, và rollback nếu có lỗi ở bất kỳ bước nào).
+Điểm đặc trưng của dự án là áp dụng **CQRS + Event Sourcing** (thông qua Axon Framework) và **Saga pattern** để xử lý giao dịch phân tán khi mượn sách (phải kiểm tra nhân viên có đang bị kỷ luật/khoá hay không, giữ một bản sao còn trống, và trả lại bản sao nếu có lỗi ở bất kỳ bước nào).
+
+Mỗi đầu sách quản lý nhiều **bản sao vật lý** (`BookCopy`: barcode, vị trí kệ, tình trạng, trạng thái `AVAILABLE / RESERVED / BORROWED / LOST / DAMAGED`). Phiếu mượn gắn với đúng một bản sao, có vòng đời `PENDING → CONFIRMED → RETURNED` (hoặc `FAILED` / `CANCELLED`), và nhiều người mượn cùng lúc không bao giờ lấy trùng bản sao (chi tiết: [book-copy-management.md](book-copy-management.md), kịch bản test tay: [BOOK_COPY_API_TEST.md](BOOK_COPY_API_TEST.md)).
 
 Mỗi phiếu mượn có **hạn trả**; một **cronjob** trong `borrowingservice` tự nhắc trước khi đến hạn, báo quá hạn và tính **tiền phạt**, rồi gửi email qua Kafka → `notificationservice` (chi tiết: [BORROWING_REMINDER.md](BORROWING_REMINDER.md)).
 
@@ -57,7 +59,7 @@ flowchart TB
     BOS <-. "đăng ký / khám phá" .-> DS
     US <-. "đăng ký / khám phá" .-> DS
 
-    BS["bookservice :9001\n(CQRS)"]
+    BS["bookservice :9001\n(CQRS, sách + bản sao)"]
     ES["employeeservice :9002\n(CQRS)"]
     BOS["borrowingservice :9004\n(CQRS + Saga + Cronjob)"]
     US["userservice :9005\n(Postgres)"]
@@ -67,8 +69,8 @@ flowchart TB
     BS -- "Command / Event" --> AX
     ES -- "Command / Event" --> AX
     BOS -- "Command / Event / Query" --> AX
-    BOS -. "Query xuyên service" .-> BS
-    BOS -. "Query xuyên service" .-> ES
+    BOS -. "Command giữ / trả bản sao" .-> BS
+    BOS -. "Query kiểm tra nhân viên" .-> ES
 
     AX[("Axon Server\nEvent Store\n:8024 / :8124 / :8224")]
 
@@ -90,10 +92,10 @@ flowchart TB
 |---|---|---|---|---|
 | `discoverserver` | 8761 | Service registry (Eureka Server) | — | Không tự đăng ký chính nó vào registry |
 | `apigateway` | 8080 | API Gateway / BFF, xác thực, rate-limit | — (Redis) | Spring Cloud Gateway WebFlux |
-| `bookservice` | 9001 | Quản lý sách (CQRS) | H2 in-memory (`bookDB`) | Aggregate: `BookAggregate` |
+| `bookservice` | 9001 | Quản lý sách và bản sao (CQRS) | H2 in-memory (`bookDB`) | Aggregate `BookAggregate` giữ toàn bộ bản sao của một đầu sách; read model bảng `book_copies` |
 | `employeeservice` | 9002 | Quản lý nhân viên (CQRS) | H2 in-memory (`employeeDB`) | Có Swagger/OpenAPI |
 | `notificationservice` | 9003 | Consumer Kafka, gửi email | — | Kafka consumer + Freemarker template (chào mừng, nhắc hạn trả, quá hạn/tiền phạt) |
-| `borrowingservice` | 9004 | Quản lý phiếu mượn (CQRS + Saga) | H2 in-memory (`borrowingDB`) | Điều phối `BorrowingSaga`; cronjob `BorrowingReminderJob` nhắc hạn trả / tính tiền phạt |
+| `borrowingservice` | 9004 | Quản lý phiếu mượn (CQRS + Saga) | H2 in-memory (`borrowingDB`) | Điều phối `BorrowingSaga` (có timeout qua `DeadlineManager`); cronjob `BorrowingReminderJob` nhắc hạn trả / tính tiền phạt |
 | `userservice` | 9005 | Quản lý user, đăng nhập, tích hợp Keycloak | PostgreSQL (`library_local`) | Gọi Keycloak Admin API qua Feign |
 | `commonservice` | — | Thư viện dùng chung (không chạy độc lập) | — | Exception, ApiResponse, Axon/Kafka/Mail config |
 
@@ -160,58 +162,95 @@ Tất cả event được lưu tập trung ở **Axon Server** (event store), ch
 
 | Loại | Tên | Service phát ra | Service xử lý |
 |---|---|---|---|
-| Command | `UpdateStatusBookCommand` | `borrowingservice` (saga) | `bookservice` |
-| Command | `RollBackBookStatusCommand` | `borrowingservice` (saga) | `bookservice` |
-| Event | `BookUpdateStatusEvent` | `bookservice` | `borrowingservice` (saga) |
-| Event | `BookRollBackStatusEvent` | `bookservice` | `borrowingservice` (saga) |
-| Query | `GetBookDetailQuery` | `borrowingservice` (saga) | `bookservice` |
-| Query | `GetDetailEmployeeQuery` | `borrowingservice` (saga) | `employeeservice` |
+| Command | `ReserveBookCopyCommand` | `borrowingservice` (saga) | `bookservice` — giữ một bản sao `AVAILABLE` cho phiếu mượn |
+| Command | `ConfirmBookCopyBorrowedCommand` | `borrowingservice` (saga) | `bookservice` — chuyển bản sao `RESERVED → BORROWED` |
+| Command | `ReleaseBookCopyCommand` | `borrowingservice` (saga) | `bookservice` — trả đúng bản sao phiếu đang giữ về `AVAILABLE` |
+| Event | `BookCopyReservedEvent` | `bookservice` | `borrowingservice` (saga) |
+| Event | `BookCopyReservationFailedEvent` | `bookservice` | `borrowingservice` (saga) — hết sách |
+| Event | `BookCopyBorrowedEvent` | `bookservice` | `bookservice` (read model) |
+| Event | `BookCopyReleasedEvent` | `bookservice` | `bookservice` (read model) |
+| Query | `GetBookDetailQuery` | `borrowingservice` (projection) | `bookservice` |
+| Query | `GetDetailEmployeeQuery` | `borrowingservice` (saga, projection, cronjob) | `employeeservice` |
+
+Các event saga lắng nghe đều mang `borrowingId`, và saga liên kết theo `borrowingId` chứ không theo `bookId`. Nhờ vậy nhiều saga cùng mượn một đầu sách không nhận nhầm event của nhau.
+
+### Quản lý bản sao sách (`bookservice`)
+
+Tài liệu đầy đủ: [book-copy-management.md](book-copy-management.md).
+
+- `BookAggregate` là ranh giới nhất quán của **một đầu sách và toàn bộ bản sao** của nó. Axon xử lý tuần tự mọi command cùng `bookId` (khoá theo aggregate và kiểm tra sequence number khi ghi event), nên khi hai người tranh bản sao cuối cùng chỉ một người giữ được.
+- Trạng thái bản sao:
+
+```mermaid
+stateDiagram-v2
+    [*] --> AVAILABLE: thêm bản sao
+    AVAILABLE --> RESERVED: saga giữ chỗ
+    RESERVED --> BORROWED: phiếu CONFIRMED
+    RESERVED --> AVAILABLE: compensation / timeout
+    BORROWED --> AVAILABLE: trả sách
+    AVAILABLE --> LOST
+    AVAILABLE --> DAMAGED
+```
+
+- Quy tắc nghiệp vụ:
+  - Tạo sách có thể kèm `initialCopies`; thêm bản sao lẻ qua `POST /books/{bookId}/copies` (barcode trùng trong cùng đầu sách → `409`).
+  - Chỉ bản `AVAILABLE` mới được đánh dấu `LOST` / `DAMAGED`. Bản mất / hỏng vẫn tính vào `totalCopies` nhưng không cho mượn.
+  - Không xoá được bản sao hoặc đầu sách khi còn bản `RESERVED` / `BORROWED` (`409`).
+  - Hết bản trống thì aggregate **không ném exception** mà phát `BookCopyReservationFailedEvent`, để saga chuyển phiếu sang `FAILED`.
+  - Saga gửi lại `ReserveBookCopyCommand` cho cùng phiếu thì không giữ thêm bản thứ hai (idempotent). Release chỉ áp dụng cho đúng bản sao mà phiếu đang giữ.
+- Read model: bảng `book_copies` (index `book_id, status` và `barcode`). `GET /books/{bookId}` trả `totalCopies`, `availableCopies` và danh sách `copies`; trường `isReady` cũ đã bỏ.
 
 ### Saga nghiệp vụ mượn sách (`BorrowingSaga` trong `borrowingservice`)
+
+`POST /api/v1/borrowing` chỉ tạo phiếu ở trạng thái `PENDING` rồi trả về `borrowingId` ngay; saga chạy bất đồng bộ phía sau. Client gọi `GET /api/v1/borrowing/{borrowingId}` để xem phiếu đã `CONFIRMED`, `FAILED` hay `CANCELLED` (kèm `bookCopyId`, `failureReason`).
 
 ```mermaid
 sequenceDiagram
     participant U as Client
     participant BOS as borrowingservice
     participant Saga as BorrowingSaga
-    participant BS as bookservice
     participant ES as employeeservice
+    participant BS as bookservice
 
     U->>BOS: POST /api/v1/borrowing
+    BOS-->>U: 201 borrowingId (PENDING)
     BOS->>Saga: BorrowingCreatedEvent
-    Saga->>BS: GetBookDetailQuery
-    BS-->>Saga: BookResponseCommonModel (isReady?)
+    Saga->>Saga: đặt deadline pending-timeout (mặc định 1 phút)
+    Saga->>ES: GetDetailEmployeeQuery
+    ES-->>Saga: EmployeeResponseCommonModel (isDisciplined?)
 
-    alt Sách hết (isReady = false)
-        Saga->>BOS: DeleteBorrowingCommand (rollback)
-    else Sách còn
-        Saga->>BS: UpdateStatusBookCommand
-        BS-->>Saga: BookUpdateStatusEvent
-        Saga->>ES: GetDetailEmployeeQuery
-        ES-->>Saga: EmployeeResponseCommonModel (isDisciplined?)
-
-        alt Nhân viên bị kỷ luật
-            Saga->>BS: RollBackBookStatusCommand
-            BS-->>Saga: BookRollBackStatusEvent
-            Saga->>BOS: DeleteBorrowingCommand (rollback)
-        else Hợp lệ
-            Saga->>Saga: SagaLifecycle.end() — hoàn tất
+    alt Nhân viên bị kỷ luật / không kiểm tra được
+        Saga->>BOS: FailBorrowingCommand (FAILED)
+    else Hợp lệ
+        Saga->>BS: ReserveBookCopyCommand
+        alt Hết bản trống
+            BS-->>Saga: BookCopyReservationFailedEvent
+            Saga->>BOS: FailBorrowingCommand (FAILED)
+        else Giữ được bản sao
+            BS-->>Saga: BookCopyReservedEvent (bookCopyId)
+            Saga->>BOS: ConfirmBorrowingCommand (CONFIRMED)
+            BOS-->>Saga: BorrowingConfirmedEvent
+            Saga->>BS: ConfirmBookCopyBorrowedCommand (copy BORROWED)
+            Saga->>Saga: kết thúc saga
         end
     end
 ```
 
 Diễn giải từng bước:
 
-1. `BorrowingCreatedEvent` (tạo phiếu mượn) → saga gọi `GetBookDetailQuery` sang `bookservice` kiểm tra sách còn sẵn (`isReady`).
-   - Nếu sách hết → gửi `DeleteBorrowingCommand` để rollback phiếu mượn.
-   - Nếu còn → gửi `UpdateStatusBookCommand` để đánh dấu sách đã được mượn.
-2. `BookUpdateStatusEvent` → saga gọi `GetDetailEmployeeQuery` sang `employeeservice` kiểm tra nhân viên có bị kỷ luật (`isDisciplined`) không.
-   - Nếu bị khoá → gửi `RollBackBookStatusCommand` (trả sách về trạng thái sẵn sàng) **và** kết thúc bằng việc xoá phiếu mượn.
-   - Nếu hợp lệ → `SagaLifecycle.end()`, hoàn tất giao dịch mượn sách.
-3. `BookRollBackStatusEvent` → rollback bản ghi mượn (`DeleteBorrowingCommand`).
-4. `BorrowingDeletedEvent` → `@EndSaga`, kết thúc saga.
+1. `BorrowingCreatedEvent` → saga đặt deadline timeout, rồi gọi `GetDetailEmployeeQuery` kiểm tra nhân viên **trước** khi giữ sách, nên nhân viên bị khoá không làm giữ bản sao nào.
+   - Bị khoá hoặc lỗi khi kiểm tra → `FailBorrowingCommand`.
+   - Hợp lệ → `ReserveBookCopyCommand`. Nếu sách không tồn tại / đã xoá thì command lỗi → `FAILED` ("Cannot reserve book ...").
+2. `BookCopyReservationFailedEvent` (hết sách) → `FailBorrowingCommand`.
+3. `BookCopyReservedEvent` → `ConfirmBorrowingCommand` gắn `bookCopyId` vào phiếu. Nếu xác nhận lỗi → **compensation**: `ReleaseBookCopyCommand` trả bản sao rồi `FailBorrowingCommand`.
+4. `BorrowingConfirmedEvent` → `ConfirmBookCopyBorrowedCommand` (bản sao `RESERVED → BORROWED`), kết thúc saga. Nếu bước này lỗi thì không release: bản sao vẫn được giữ cho đúng phiếu này và vẫn trả được khi trả sách.
+5. **Timeout**: quá `borrowing.saga.pending-timeout` (mặc định `PT1M`) mà phiếu vẫn `PENDING` → `CancelBorrowingCommand` (`CANCELLED`). Nếu saga đã giữ bản sao thì release; nếu đang chờ kết quả giữ chỗ thì đợi event về rồi mới release và kết thúc, tránh bản sao kẹt ở `RESERVED`.
+6. `BorrowingFailedEvent` / `BorrowingCancelledEvent` → kết thúc saga và huỷ deadline.
+7. **Trả sách**: `BorrowingReturnedEvent` khởi động một saga ngắn, gửi `ReleaseBookCopyCommand` với đúng `bookCopyId` của phiếu.
 
-Đây là ví dụ **compensating transaction** (Saga orchestration) điển hình cho giao dịch xuyên nhiều service không dùng distributed transaction/2PC: thay vì khoá tài nguyên trên nhiều service cùng lúc, hệ thống chấp nhận trạng thái "tạm thời không nhất quán" rồi tự sửa (rollback) bằng một chuỗi command bù trừ nếu bước sau thất bại.
+Vòng đời phiếu mượn (`BorrowingStatus`): `PENDING → CONFIRMED → RETURNED`, `PENDING → FAILED`, `PENDING → CANCELLED`. Aggregate chặn các thao tác sai trạng thái: chỉ trả được phiếu `CONFIRMED` (trả lần hai hoặc trả phiếu `FAILED` → `409`), `bookId` / `employeeId` khi trả phải khớp phiếu (`400`), API sửa phiếu không cho đổi `bookId` và không cho đặt `returnDate` (phải dùng API trả sách).
+
+Đây là ví dụ **compensating transaction** (Saga orchestration) điển hình cho giao dịch xuyên nhiều service không dùng distributed transaction/2PC: thay vì khoá tài nguyên trên nhiều service cùng lúc, hệ thống chấp nhận trạng thái "tạm thời không nhất quán" (phiếu `PENDING`, bản sao `RESERVED`) rồi tự sửa bằng command bù trừ nếu bước sau thất bại hoặc quá thời gian.
 
 ### Hạn trả, quá hạn và tiền phạt (cronjob)
 
@@ -222,7 +261,7 @@ Tài liệu đầy đủ: [BORROWING_REMINDER.md](BORROWING_REMINDER.md).
   - **Sắp đến hạn** (trong 2 ngày tới) → `NotifyBorrowingDueSoonCommand` → nhắc **1 lần**.
   - **Quá hạn** → `RecordBorrowingOverdueCommand` → aggregate tính `số ngày trễ × 5.000 VND` → báo **tối đa 1 lần/ngày**.
 - Aggregate quyết định có gửi hay không và lưu lại bằng event (`BorrowingDueSoonNotifiedEvent`, `BorrowingOverdueRecordedEvent`), nên chạy lại job hay chạy nhiều instance đều không gửi trùng. Chỉ khi command thành công, job mới publish `BorrowingNotificationMessage` (JSON) lên topic `borrowing-notification`.
-- Tiền phạt được **chốt** trong `BorrowingReturedEvent` khi trả sách.
+- Tiền phạt được **chốt** trong `BorrowingReturnedEvent` khi trả sách.
 - `notificationservice` (`BorrowingNotificationConsumer`) render `borrowingDueSoon.ftl` / `borrowingOverdue.ftl` và gửi email tới `email` của nhân viên (trường mới của `employeeservice`). Có retry topic + DLT như các consumer khác.
 
 ## 6. Chuẩn hoá response & xử lý lỗi
@@ -241,7 +280,12 @@ Ví dụ response thành công:
     "id": "b1",
     "name": "Clean Architecture",
     "author": "Robert C. Martin",
-    "isReady": true
+    "totalCopies": 2,
+    "availableCopies": 1,
+    "copies": [
+      { "id": "c1", "barcode": "BC001", "status": "BORROWED", "location": "Shelf A1", "condition": "New" },
+      { "id": "c2", "barcode": null, "status": "AVAILABLE", "location": null, "condition": null }
+    ]
   }
 }
 ```
@@ -263,20 +307,25 @@ Ví dụ response lỗi (validation):
 
 | Method | Path | Service | Mô tả |
 |---|---|---|---|
-| POST | `/api/v1/books` | bookservice (command) | Tạo sách |
+| POST | `/api/v1/books` | bookservice (command) | Tạo sách, tuỳ chọn `initialCopies` để tạo sẵn N bản sao |
 | PUT | `/api/v1/books/{bookId}` | bookservice (command) | Cập nhật sách |
-| DELETE | `/api/v1/books/{bookId}` | bookservice (command) | Xoá sách |
-| GET | `/api/v1/books` | bookservice (query) | Lấy danh sách sách |
-| GET | `/api/v1/books/{bookId}` | bookservice (query) | Lấy chi tiết sách |
+| DELETE | `/api/v1/books/{bookId}` | bookservice (command) | Xoá sách (`409` nếu còn bản sao `RESERVED` / `BORROWED`) |
+| POST | `/api/v1/books/{bookId}/copies` | bookservice (command) | Thêm bản sao (`barcode`, `location`, `condition`; barcode trùng → `409`) |
+| DELETE | `/api/v1/books/{bookId}/copies/{bookCopyId}` | bookservice (command) | Xoá bản sao (không xoá được bản đang giữ / đang mượn) |
+| PATCH | `/api/v1/books/{bookId}/copies/{bookCopyId}/lost` | bookservice (command) | Đánh dấu bản sao bị mất (chỉ bản `AVAILABLE`) |
+| PATCH | `/api/v1/books/{bookId}/copies/{bookCopyId}/damaged` | bookservice (command) | Đánh dấu bản sao bị hỏng (chỉ bản `AVAILABLE`) |
+| GET | `/api/v1/books` | bookservice (query) | Lấy danh sách sách (kèm `totalCopies`, `availableCopies`) |
+| GET | `/api/v1/books/{bookId}` | bookservice (query) | Lấy chi tiết sách kèm danh sách bản sao |
 | POST | `/api/v1/books/sendMessage` | bookservice (query) | Test gửi message Kafka |
 | POST | `/api/v1/employees` | employeeservice (command) | Tạo nhân viên (có `email` để nhận thông báo) |
 | PUT | `/api/v1/employees/{employeeId}` | employeeservice (command) | Cập nhật nhân viên |
 | DELETE | `/api/v1/employees/{employeeId}` | employeeservice (command) | Xoá nhân viên |
 | GET | `/api/v1/employees?isDisciplined=` | employeeservice (query) | Lấy danh sách nhân viên, lọc theo trạng thái kỷ luật |
 | GET | `/api/v1/employees/{employeeId}` | employeeservice (query) | Lấy chi tiết nhân viên |
-| POST | `/api/v1/borrowing` | borrowingservice (command) | Tạo phiếu mượn sách (kích hoạt saga, tự gán hạn trả) |
-| PATCH | `/api/v1/borrowing/{borrowingId}` | borrowingservice (command) | Sửa phiếu mượn / gia hạn (`dueDate`) |
-| PATCH | `/api/v1/borrowing/{borrowingId}/return` | borrowingservice (command) | Trả sách (chốt tiền phạt nếu trả muộn) |
+| POST | `/api/v1/borrowing` | borrowingservice (command) | Tạo phiếu mượn ở trạng thái `PENDING` (kích hoạt saga, tự gán hạn trả) |
+| GET | `/api/v1/borrowing/{borrowingId}` | borrowingservice (query) | Xem kết quả phiếu mượn: `status`, `bookCopyId`, `failureReason` (MEMBER chỉ xem phiếu của mình) |
+| PATCH | `/api/v1/borrowing/{borrowingId}` | borrowingservice (command) | LIBRARIAN/ADMIN sửa phiếu / gia hạn (`dueDate`); không đổi được `bookId`, không đặt `returnDate` |
+| PATCH | `/api/v1/borrowing/{borrowingId}/return` | borrowingservice (command) | Trả sách, release đúng bản sao đã mượn (chốt tiền phạt nếu trả muộn) |
 | GET | `/api/v1/borrowing/employeeId/{employeeId}` | borrowingservice (query) | Danh sách phiếu mượn của nhân viên (kèm `dueDate`, `fineAmount`) |
 | POST | `/api/v1/borrowing/reminders/run` | borrowingservice (command) | ADMIN chạy ngay cronjob nhắc hạn / báo quá hạn |
 | POST | `/api/v1/public/login` | userservice | Đăng nhập (không cần JWT, đi qua Keycloak) |
@@ -286,6 +335,8 @@ Ví dụ response lỗi (validation):
 | PUT | `/api/v1/users/{id}` | userservice | Cập nhật user |
 | DELETE | `/api/v1/users/{id}` | userservice | Xoá user |
 
+Mọi API ghi của `bookservice` (sách và bản sao) chỉ dành cho role `LIBRARIAN` / `ADMIN`. MEMBER chỉ tạo, trả và xem được phiếu mượn của chính mình (theo attribute `employeeId` trên Keycloak).
+
 Tất cả request qua `apigateway` (port `8080`) đều được route dựa trên path và (trừ `/api/v1/public/**`) yêu cầu JWT hợp lệ từ Keycloak; route `/books` và `/employees` còn yêu cầu thêm header `apiKey` hợp lệ và bị giới hạn tốc độ 10 req/s (burst 20) qua Redis.
 
 ## 8. Luồng nghiệp vụ end-to-end — ví dụ "mượn sách"
@@ -293,10 +344,11 @@ Tất cả request qua `apigateway` (port `8080`) đều được route dựa tr
 1. Client gọi `POST /api/v1/public/login` (qua gateway → `userservice` → Keycloak) để lấy `access_token`.
 2. Client gọi `POST /api/v1/borrowing` kèm `Authorization: Bearer <token>` → gateway xác thực JWT, forward xuống `borrowingservice`.
 3. `borrowingservice` tạo `Borrowing` aggregate, phát `BorrowingCreatedEvent` → lưu vào Axon Server.
-4. `BorrowingSaga` bắt sự kiện, gọi lần lượt `bookservice` (kiểm tra sách) rồi `employeeservice` (kiểm tra nhân viên) như mô tả ở mục 5; nếu một trong hai điều kiện không thoả, saga tự rollback bằng command bù trừ.
-5. Khi giao dịch thành công, một service (Book/Notification, tuỳ luồng thực tế) publish message lên Kafka (`testEmail` / `emailTemplate`).
-6. Hằng ngày, `BorrowingReminderJob` kiểm tra các phiếu chưa trả: nhắc khi sắp đến hạn, báo quá hạn kèm tiền phạt tạm tính (publish lên topic `borrowing-notification`). Khi trả sách muộn, tiền phạt được chốt vào phiếu mượn.
-7. `notificationservice` (`EventConsumer`, `BorrowingNotificationConsumer`) tiêu thụ message, render email bằng FreeMarker (`emailTemplate.ftl`) hoặc template inline, gửi qua SMTP Gmail; nếu xử lý lỗi, message được đẩy qua **retry topic** (backoff nhân đôi, tối đa 3 lần retry) rồi cuối cùng vào **Dead Letter Topic (DLT)** nếu vẫn thất bại.
+4. API trả về `borrowingId` ngay (phiếu `PENDING`). `BorrowingSaga` bắt sự kiện, kiểm tra nhân viên ở `employeeservice` rồi giữ một bản sao ở `bookservice` như mô tả ở mục 5; nếu không thoả hoặc quá thời gian chờ, phiếu chuyển `FAILED` / `CANCELLED` và bản sao đã giữ (nếu có) được trả lại.
+5. Client gọi `GET /api/v1/borrowing/{borrowingId}` sau 1–2 giây để biết phiếu đã `CONFIRMED` (kèm `bookCopyId`) hay chưa.
+6. Khi giao dịch thành công, một service (Book/Notification, tuỳ luồng thực tế) publish message lên Kafka (`testEmail` / `emailTemplate`).
+7. Hằng ngày, `BorrowingReminderJob` kiểm tra các phiếu chưa trả: nhắc khi sắp đến hạn, báo quá hạn kèm tiền phạt tạm tính (publish lên topic `borrowing-notification`). Khi trả sách muộn, tiền phạt được chốt vào phiếu mượn.
+8. `notificationservice` (`EventConsumer`, `BorrowingNotificationConsumer`) tiêu thụ message, render email bằng FreeMarker (`emailTemplate.ftl`) hoặc template inline, gửi qua SMTP Gmail; nếu xử lý lỗi, message được đẩy qua **retry topic** (backoff nhân đôi, tối đa 3 lần retry) rồi cuối cùng vào **Dead Letter Topic (DLT)** nếu vẫn thất bại.
 
 ## 9. Hạ tầng & Triển khai
 
@@ -354,7 +406,8 @@ Trong lúc đọc cấu hình, phát hiện một số vấn đề nên xử lý
 
 **Điểm mạnh**
 - Áp dụng đúng tinh thần CQRS/Event Sourcing với Axon: tách bạch rõ ràng command/query, aggregate/projection theo từng service.
-- Saga orchestration xử lý rollback nhiều bước khá mạch lạc, dễ trace qua log.
+- Saga orchestration xử lý rollback nhiều bước khá mạch lạc, dễ trace qua log; có timeout và compensation để bản sao không bị kẹt ở `RESERVED`.
+- Mượn đồng thời an toàn: `BookAggregate` là ranh giới nhất quán của cả đầu sách, nên không bao giờ hai phiếu cùng nhận một bản sao. Logic aggregate có test bằng `AggregateTestFixture` (`BookAggregateTest`, `BorrowingAggregateTest`).
 - Có chuẩn hoá response (`ApiResponse`) và xử lý lỗi tập trung nhất quán giữa các service dùng `commonservice`.
 - Có sẵn cơ chế retry + Dead Letter Topic cho Kafka consumer — xử lý lỗi message một cách tường minh thay vì nuốt lỗi.
 - Tách API Gateway độc lập với rate-limit (Redis) và xác thực JWT tập trung, không để từng service tự lo xác thực.
@@ -363,6 +416,9 @@ Trong lúc đọc cấu hình, phát hiện một số vấn đề nên xử lý
 - Chưa có **Config Server** tập trung (Spring Cloud Config) — mỗi service tự quản `application.properties/yml`, dễ lệch cấu hình giữa các môi trường.
 - Chưa có **circuit breaker / resilience** (vd. Resilience4j) cho các lời gọi liên service (Feign, QueryGateway) — một service chậm/lỗi có thể làm nghẽn saga.
 - Chưa có **distributed tracing** (Zipkin/Sleuth hoặc OpenTelemetry) — khó theo dõi một request xuyên nhiều service khi debug ở môi trường thật.
+- Deadline timeout của saga dùng `SimpleDeadlineManager` (lưu trong bộ nhớ): restart `borrowingservice` thì các deadline đang chờ bị mất, phiếu `PENDING` khi đó có thể không tự `CANCELLED`. Cần deadline manager bền vững (vd. JobRunr, Quartz, hoặc DB-backed) khi chạy thật.
+- Nhánh compensation "giữ được bản sao nhưng xác nhận phiếu lỗi" trong `BorrowingSaga` chưa có test tự động và không tái hiện được qua API.
+- `BookAggregate` chứa toàn bộ bản sao của một đầu sách: đầu sách có rất nhiều bản sao / lượt mượn sẽ có event stream dài, nên cân nhắc bật snapshot.
 - H2 in-memory cho các service CQRS phù hợp để demo nhưng **mất dữ liệu khi restart** — cần DB thật (Postgres/MySQL) nếu triển khai thật.
 - Một số cấu hình còn hard-code `localhost` (Eureka defaultZone, Redis host) — cần tham số hoá đầy đủ qua biến môi trường cho từng môi trường deploy.
 - Manifest Kubernetes và `docker-compose.yml` chưa đồng bộ với danh sách service thực tế (xem mục 11).
@@ -375,6 +431,8 @@ Trong lúc đọc cấu hình, phát hiện một số vấn đề nên xử lý
 | **Event Sourcing** | Lưu trạng thái dưới dạng chuỗi sự kiện (event) thay vì chỉ lưu trạng thái cuối cùng; có thể replay lại toàn bộ lịch sử. |
 | **Aggregate** | Đơn vị nghiệp vụ chịu trách nhiệm nhận Command, đảm bảo tính nhất quán, và phát Event (trong Axon: `@Aggregate`). |
 | **Saga** | Pattern xử lý giao dịch xuyên nhiều service bằng một chuỗi bước + command bù trừ (compensating transaction) thay vì transaction phân tán (2PC). |
+| **Compensation** | Command bù trừ để huỷ tác dụng của một bước đã làm khi bước sau thất bại (vd. `ReleaseBookCopyCommand` trả bản sao đã giữ). |
+| **Deadline** | Hẹn giờ của Axon gắn với saga/aggregate; hết hạn thì gọi `@DeadlineHandler` (dùng cho timeout phiếu `PENDING`). |
 | **Projection** | Read-model được cập nhật từ event, phục vụ cho truy vấn (Query side của CQRS). |
 | **Eureka** | Service registry của Netflix OSS — nơi các service đăng ký & tra cứu địa chỉ lẫn nhau. |
 | **API Gateway** | Điểm vào duy nhất cho client, lo định tuyến, xác thực, rate-limit trước khi vào các service nội bộ. |
@@ -398,6 +456,8 @@ codes/
 ├── scripts/deploy.sh    # Script deploy trên VPS qua SSH
 ├── RBAC.md              # Tài liệu phân quyền theo vai trò (Keycloak)
 ├── BORROWING_REMINDER.md # Tài liệu hạn trả, quá hạn, tiền phạt (cronjob)
+├── book-copy-management.md # Đặc tả quản lý bản sao sách + saga mượn / trả
+├── BOOK_COPY_API_TEST.md   # Kịch bản test tay API bản sao sách
 ├── docker-compose.yml           # Compose môi trường chính (app + Axon + Kafka + Redis)
 ├── docker-compose-provider.yml  # Compose riêng cho Keycloak
 ├── k8s.deployment.yaml          # Manifest K8s mẫu (chưa đầy đủ)

@@ -3,6 +3,7 @@ package com.javamicroservices.borrowingservice.query.projection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.axonframework.messaging.responsetypes.ResponseTypes;
 import org.axonframework.queryhandling.QueryGateway;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 import com.javamicroservices.borrowingservice.command.data.Borrowing;
 import com.javamicroservices.borrowingservice.command.data.BorrowingRepository;
 import com.javamicroservices.borrowingservice.query.model.BorrowingResponseModel;
+import com.javamicroservices.borrowingservice.query.queries.GetBorrowingDetailQuery;
 import com.javamicroservices.borrowingservice.query.queries.GetBorrowingWithEmployeeIdQuery;
 import com.javamicroservices.commonservice.exception.NotFoundException;
 import com.javamicroservices.commonservice.model.BookResponseCommonModel;
@@ -39,15 +41,25 @@ public class BorrowingProjection {
 
         List<Borrowing> borrowings = borrowingRepository.findByEmployeeId(query.getEmployeeId());
 
+        return borrowings.stream().map(borrowing -> toResponse(borrowing, employee)).collect(Collectors.toList());
+    }
 
-        return borrowings.stream().map(borrowing -> {
-            BookResponseCommonModel book = getBook(borrowing.getBookId());
-            BorrowingResponseModel model = new BorrowingResponseModel();
-            BeanUtils.copyProperties(borrowing, model);
-            model.setEmployee(employee);
-            model.setBook(book);
-            return model;
-        }).toList();
+    @QueryHandler
+    public BorrowingResponseModel handle(GetBorrowingDetailQuery query) {
+        Borrowing borrowing = borrowingRepository.findById(query.getId())
+            .orElseThrow(() -> new NotFoundException("Borrowing not found with BorrowingId: " + query.getId()));
+        return toResponse(borrowing, getEmployee(borrowing.getEmployeeId()));
+    }
+
+    private BorrowingResponseModel toResponse(Borrowing borrowing, EmployeeResponseCommonModel employee) {
+        BookResponseCommonModel book = getBook(borrowing.getBookId());
+        // Danh sách bản sao của đầu sách không cần trong phiếu mượn
+        book.setCopies(null);
+        BorrowingResponseModel model = new BorrowingResponseModel();
+        BeanUtils.copyProperties(borrowing, model);
+        model.setEmployee(employee);
+        model.setBook(book);
+        return model;
     }
 
     private EmployeeResponseCommonModel getEmployee(String employeeId) {

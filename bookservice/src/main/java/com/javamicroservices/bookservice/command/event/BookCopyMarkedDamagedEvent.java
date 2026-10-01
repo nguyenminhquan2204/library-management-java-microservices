@@ -9,10 +9,8 @@ import lombok.Setter;
 @Setter 
 @AllArgsConstructor 
 @NoArgsConstructor 
-public class BookCreatedEvent {
-    private String id;
+public class BookCopyMarkedDamagedEvent {
+    private String bookId;
 
-    private String name;
-
-    private String author;
+    private String bookCopyId;
 }

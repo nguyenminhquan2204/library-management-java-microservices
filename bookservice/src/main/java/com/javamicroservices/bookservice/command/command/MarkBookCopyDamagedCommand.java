@@ -11,13 +11,9 @@ import lombok.Setter;
 @Setter 
 @AllArgsConstructor 
 @NoArgsConstructor 
-public class CreateBookCommand {
+public class MarkBookCopyDamagedCommand {
     @TargetAggregateIdentifier 
-    private String id;
+    private String bookId;
 
-    private String name;
-
-    private String author;
-
-    private int initialCopies;
+    private String bookCopyId;
 }

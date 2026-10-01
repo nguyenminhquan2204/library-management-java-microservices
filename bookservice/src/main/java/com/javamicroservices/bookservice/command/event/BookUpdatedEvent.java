@@ -15,7 +15,4 @@ public class BookUpdatedEvent {
     private String name;
 
     private String author;
-
-    private Boolean isReady;
 }
-

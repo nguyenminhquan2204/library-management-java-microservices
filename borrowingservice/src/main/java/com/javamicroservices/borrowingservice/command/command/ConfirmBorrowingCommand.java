@@ -1,4 +1,4 @@
-package com.javamicroservices.commonservice.command;
+package com.javamicroservices.borrowingservice.command.command;
 
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
 
@@ -9,13 +9,11 @@ import lombok.NoArgsConstructor;
 @Data 
 @AllArgsConstructor 
 @NoArgsConstructor 
-public class UpdateStatusBookCommand {
+public class ConfirmBorrowingCommand {
     @TargetAggregateIdentifier 
-    private String bookId;
+    private String id;
 
-    private Boolean isReady;
+    private String bookCopyId;
 
-    private String employeeId;
-
-    private String borrowingId;
+    private String reservationId;
 }

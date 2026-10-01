@@ -51,7 +51,8 @@ public class BorrowingCommandController {
         Date borrowingDate = new Date();
         CreateBorrowingCommand command = new CreateBorrowingCommand(UUID.randomUUID().toString(), model.getBookId(), model.getEmployeeId(), borrowingDate, borrowingPolicy.dueDateFrom(borrowingDate));
         String borrowingId = commandGateway.sendAndWait(command);
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created("Borrowing created successfully", borrowingId));
+        // Phiếu mượn ở trạng thái PENDING, saga giữ bản sao bất đồng bộ -> xem kết quả qua GET /api/v1/borrowing/{borrowingId}
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created("Borrowing created, waiting for book copy reservation", borrowingId));
     }
 
     @PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')")

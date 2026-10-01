@@ -1,5 +1,7 @@
 package com.javamicroservices.commonservice.model;
 
+import java.util.List;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -14,5 +16,9 @@ public class BookResponseCommonModel {
 
     private String author;
 
-    private Boolean isReady;
+    private long totalCopies;
+
+    private long availableCopies;
+
+    private List<BookCopyResponseCommonModel> copies;
 }

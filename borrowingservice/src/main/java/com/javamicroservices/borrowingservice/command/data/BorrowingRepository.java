@@ -13,19 +13,19 @@ public interface BorrowingRepository extends JpaRepository<Borrowing, String> {
 
     List<Borrowing> findByEmployeeId(String employeeId);
 
-    /** Phiếu chưa trả, hạn trả nằm trong [from, to) và chưa được nhắc. */
+    /** Phiếu đang mượn, hạn trả nằm trong [from, to) và chưa được nhắc. */
     @Query("""
         SELECT b FROM Borrowing b
-        WHERE b.returnDate IS NULL
+        WHERE b.status = com.javamicroservices.borrowingservice.command.data.BorrowingStatus.CONFIRMED
           AND b.dueSoonNotified = false
           AND b.dueDate >= :from AND b.dueDate < :to
         """)
     List<Borrowing> findDueSoon(@Param("from") Date from, @Param("to") Date to);
 
-    /** Phiếu chưa trả, đã quá hạn (hạn trả trước {@code startOfToday}) và hôm nay chưa được báo. */
+    /** Phiếu đang mượn, đã quá hạn (hạn trả trước {@code startOfToday}) và hôm nay chưa được báo. */
     @Query("""
         SELECT b FROM Borrowing b
-        WHERE b.returnDate IS NULL
+        WHERE b.status = com.javamicroservices.borrowingservice.command.data.BorrowingStatus.CONFIRMED
           AND b.dueDate < :startOfToday
           AND (b.lastOverdueNotifiedAt IS NULL OR b.lastOverdueNotifiedAt < :startOfToday)
         """)

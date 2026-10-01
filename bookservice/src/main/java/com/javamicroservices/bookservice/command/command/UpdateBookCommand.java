@@ -18,6 +18,4 @@ public class UpdateBookCommand {
     private String name;
 
     private String author;
-
-    private Boolean isReady;
 }

@@ -1,6 +1,7 @@
 package com.javamicroservices.employeeservice.query.projection;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.axonframework.queryhandling.QueryHandler;
 import org.springframework.beans.BeanUtils;
@@ -27,7 +28,7 @@ public class EmployeeProjection {
             EmployeeResponseModel model = new EmployeeResponseModel();
             BeanUtils.copyProperties(employee, model);
             return model;
-        }).toList();
+        }).collect(Collectors.toList());
     }
 
     @QueryHandler

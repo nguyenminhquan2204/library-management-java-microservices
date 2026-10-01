@@ -9,7 +9,9 @@ import lombok.NoArgsConstructor;
 @Data 
 @AllArgsConstructor 
 @NoArgsConstructor 
-public class DeleteBorrowingCommand {
+public class FailBorrowingCommand {
     @TargetAggregateIdentifier 
     private String id;
+
+    private String reason;
 }

@@ -1,6 +1,7 @@
 package com.javamicroservices.borrowingservice.configuration;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -29,6 +30,10 @@ public class BorrowingPolicy {
 
     @Value("${borrowing.policy.currency:VND}")
     private String currency;
+
+    // Phiếu mượn PENDING quá thời gian này (saga không nhận được phản hồi) sẽ bị CANCELLED
+    @Value("${borrowing.saga.pending-timeout:PT1M}")
+    private Duration pendingTimeout;
 
     private final ZoneId zone = ZoneId.systemDefault();
 

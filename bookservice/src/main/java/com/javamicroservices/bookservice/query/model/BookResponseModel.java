@@ -14,5 +14,7 @@ public class BookResponseModel {
 
     private String author;
 
-    private Boolean isReady;
+    private long totalCopies;
+
+    private long availableCopies;
 }

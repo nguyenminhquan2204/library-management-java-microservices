@@ -1,23 +1,17 @@
-package com.javamicroservices.bookservice.command.command;
+package com.javamicroservices.borrowingservice.command.command;
 
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
 
 import lombok.AllArgsConstructor;
-import lombok.Getter;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
-@Getter 
-@Setter 
+@Data 
 @AllArgsConstructor 
 @NoArgsConstructor 
-public class CreateBookCommand {
+public class CancelBorrowingCommand {
     @TargetAggregateIdentifier 
     private String id;
 
-    private String name;
-
-    private String author;
-
-    private int initialCopies;
+    private String reason;
 }

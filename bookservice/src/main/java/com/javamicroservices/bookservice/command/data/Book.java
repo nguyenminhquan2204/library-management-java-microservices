@@ -1,5 +1,7 @@
 package com.javamicroservices.bookservice.command.data;
 
+import java.util.Date;
+
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -22,5 +24,7 @@ public class Book {
 
     private String author;
 
-    private Boolean isReady;
+    private Date createdAt;
+
+    private Date updatedAt;
 }

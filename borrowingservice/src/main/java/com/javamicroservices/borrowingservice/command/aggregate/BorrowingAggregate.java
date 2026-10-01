@@ -10,17 +10,22 @@ import org.axonframework.modelling.command.AggregateLifecycle;
 import org.axonframework.spring.stereotype.Aggregate;
 import org.springframework.beans.BeanUtils;
 
+import com.javamicroservices.borrowingservice.command.command.CancelBorrowingCommand;
+import com.javamicroservices.borrowingservice.command.command.ConfirmBorrowingCommand;
 import com.javamicroservices.borrowingservice.command.command.CreateBorrowingCommand;
-import com.javamicroservices.borrowingservice.command.command.DeleteBorrowingCommand;
+import com.javamicroservices.borrowingservice.command.command.FailBorrowingCommand;
 import com.javamicroservices.borrowingservice.command.command.NotifyBorrowingDueSoonCommand;
 import com.javamicroservices.borrowingservice.command.command.RecordBorrowingOverdueCommand;
 import com.javamicroservices.borrowingservice.command.command.ReturnBorrowingCommand;
 import com.javamicroservices.borrowingservice.command.command.UpdateBorrowingCommand;
+import com.javamicroservices.borrowingservice.command.data.BorrowingStatus;
+import com.javamicroservices.borrowingservice.command.event.BorrowingCancelledEvent;
+import com.javamicroservices.borrowingservice.command.event.BorrowingConfirmedEvent;
 import com.javamicroservices.borrowingservice.command.event.BorrowingCreatedEvent;
-import com.javamicroservices.borrowingservice.command.event.BorrowingDeletedEvent;
 import com.javamicroservices.borrowingservice.command.event.BorrowingDueSoonNotifiedEvent;
+import com.javamicroservices.borrowingservice.command.event.BorrowingFailedEvent;
 import com.javamicroservices.borrowingservice.command.event.BorrowingOverdueRecordedEvent;
-import com.javamicroservices.borrowingservice.command.event.BorrowingReturedEvent;
+import com.javamicroservices.borrowingservice.command.event.BorrowingReturnedEvent;
 import com.javamicroservices.borrowingservice.command.event.BorrowingUpdatedEvent;
 import com.javamicroservices.borrowingservice.command.model.BorrowingUpdateResponse;
 import com.javamicroservices.borrowingservice.configuration.BorrowingPolicy;
@@ -37,7 +42,12 @@ public class BorrowingAggregate {
 
     private String bookId;
 
+    // Bản sao được giữ cho phiếu mượn, chỉ có sau khi CONFIRMED
+    private String bookCopyId;
+
     private String employeeId;
+
+    private BorrowingStatus status;
 
     private Date borrowingDate;
 
@@ -60,23 +70,40 @@ public class BorrowingAggregate {
         AggregateLifecycle.apply(event);
     }
 
-    @CommandHandler 
-    public void handle(DeleteBorrowingCommand command) {
-        BorrowingDeletedEvent event = new BorrowingDeletedEvent(command.getId());
-        AggregateLifecycle.apply(event);
+    /**
+     * Saga đã giữ được bản sao -> xác nhận phiếu mượn. Nếu phiếu đã bị huỷ (timeout) thì từ chối để saga release bản sao.
+     */
+    @CommandHandler
+    public void handle(ConfirmBorrowingCommand command) {
+        requireStatus(BorrowingStatus.PENDING, "confirm");
+        AggregateLifecycle.apply(new BorrowingConfirmedEvent(this.id, this.bookId, command.getBookCopyId(), this.employeeId, command.getReservationId()));
+    }
+
+    @CommandHandler
+    public void handle(FailBorrowingCommand command) {
+        requireStatus(BorrowingStatus.PENDING, "fail");
+        AggregateLifecycle.apply(new BorrowingFailedEvent(this.id, command.getReason()));
+    }
+
+    @CommandHandler
+    public void handle(CancelBorrowingCommand command) {
+        requireStatus(BorrowingStatus.PENDING, "cancel");
+        AggregateLifecycle.apply(new BorrowingCancelledEvent(this.id, command.getReason()));
     }
 
     @CommandHandler 
     public void handle(ReturnBorrowingCommand command, BorrowingPolicy policy) {
-        if (this.returnDate != null) {
+        if (this.status == BorrowingStatus.RETURNED) {
             throw new ConflictException("Borrowing with bookId " + this.bookId + " already returned in " + this.returnDate);
         }
+        requireStatus(BorrowingStatus.CONFIRMED, "return");
         if (!this.bookId.equals(command.getBookId()) || !this.employeeId.equals(command.getEmployeeId())) {
             throw new BadRequestException("BookId or employeeId does not match this borrowing");
         }
 
-        BorrowingReturedEvent event = new BorrowingReturedEvent();
+        BorrowingReturnedEvent event = new BorrowingReturnedEvent();
         BeanUtils.copyProperties(command, event);
+        event.setBookCopyId(this.bookCopyId);
         // Chốt tiền phạt tại thời điểm trả sách
         event.setFineAmount(policy.calculateFine(this.dueDate, command.getReturnDate()));
         AggregateLifecycle.apply(event);
@@ -89,6 +116,14 @@ public class BorrowingAggregate {
         // Không truyền dueDate thì giữ nguyên hạn trả cũ
         Date dueDate = command.getDueDate() != null ? command.getDueDate() : this.dueDate;
 
+        // Bản sao gắn với đầu sách ban đầu, đổi sách phải tạo phiếu mượn mới
+        if (command.getBookId() != null && !command.getBookId().equals(this.bookId)) {
+            throw new BadRequestException("Cannot change bookId of a borrowing");
+        }
+        // Trả sách phải đi qua API trả để saga release bản sao
+        if (returnDate != null && this.status != BorrowingStatus.RETURNED) {
+            throw new BadRequestException("Use the return API to return a book");
+        }
         if (returnDate != null && returnDate.before(borrowingDate)) {
             throw new BadRequestException("Return date must be after borrowing date");
         }
@@ -104,9 +139,7 @@ public class BorrowingAggregate {
 
     @CommandHandler
     public void handle(NotifyBorrowingDueSoonCommand command) {
-        if (this.returnDate != null) {
-            throw new ConflictException("Borrowing " + this.id + " already returned");
-        }
+        requireStatus(BorrowingStatus.CONFIRMED, "notify due soon for");
         if (this.dueSoonNotified) {
             throw new ConflictException("Due soon reminder already sent for borrowing " + this.id);
         }
@@ -120,9 +153,7 @@ public class BorrowingAggregate {
      */
     @CommandHandler
     public BorrowingOverdueRecordedEvent handle(RecordBorrowingOverdueCommand command, BorrowingPolicy policy) {
-        if (this.returnDate != null) {
-            throw new ConflictException("Borrowing " + this.id + " already returned");
-        }
+        requireStatus(BorrowingStatus.CONFIRMED, "record overdue for");
         long overdueDays = policy.overdueDays(this.dueDate, command.getCheckedAt());
         if (overdueDays <= 0) {
             throw new BadRequestException("Borrowing " + this.id + " is not overdue");
@@ -137,6 +168,12 @@ public class BorrowingAggregate {
         return event;
     }
 
+    private void requireStatus(BorrowingStatus expected, String action) {
+        if (this.status != expected) {
+            throw new ConflictException("Cannot " + action + " borrowing " + this.id + " with status " + this.status);
+        }
+    }
+
     @EventSourcingHandler
     public void on(BorrowingCreatedEvent event) {
         this.id = event.getId();
@@ -144,11 +181,23 @@ public class BorrowingAggregate {
         this.employeeId = event.getEmployeeId();
         this.borrowingDate = event.getBorrowingDate();
         this.dueDate = event.getDueDate();
+        this.status = BorrowingStatus.PENDING;
     }
 
-    @EventSourcingHandler 
-    public void on(BorrowingDeletedEvent event) {
-        this.id = event.getId();
+    @EventSourcingHandler
+    public void on(BorrowingConfirmedEvent event) {
+        this.bookCopyId = event.getBookCopyId();
+        this.status = BorrowingStatus.CONFIRMED;
+    }
+
+    @EventSourcingHandler
+    public void on(BorrowingFailedEvent event) {
+        this.status = BorrowingStatus.FAILED;
+    }
+
+    @EventSourcingHandler
+    public void on(BorrowingCancelledEvent event) {
+        this.status = BorrowingStatus.CANCELLED;
     }
 
     @EventSourcingHandler
@@ -166,10 +215,8 @@ public class BorrowingAggregate {
     }
 
     @EventSourcingHandler
-    public void on(BorrowingReturedEvent event) {
-        this.id = event.getId();
-        this.bookId = event.getBookId();
-        this.employeeId = event.getEmployeeId();
+    public void on(BorrowingReturnedEvent event) {
+        this.status = BorrowingStatus.RETURNED;
         this.returnDate = event.getReturnDate();
         if (event.getFineAmount() != null) {
             this.fineAmount = event.getFineAmount();
