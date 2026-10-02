@@ -29,6 +29,7 @@ import com.javamicroservices.borrowingservice.command.event.BorrowingReturnedEve
 import com.javamicroservices.borrowingservice.command.event.BorrowingUpdatedEvent;
 import com.javamicroservices.borrowingservice.command.model.BorrowingUpdateResponse;
 import com.javamicroservices.borrowingservice.configuration.BorrowingPolicy;
+import com.javamicroservices.commonservice.event.BorrowingFineAssessedEvent;
 import com.javamicroservices.commonservice.exception.BadRequestException;
 import com.javamicroservices.commonservice.exception.ConflictException;
 
@@ -106,6 +107,18 @@ public class BorrowingAggregate {
         event.setBookCopyId(this.bookCopyId);
         // Chốt tiền phạt tại thời điểm trả sách
         event.setFineAmount(policy.calculateFine(this.dueDate, command.getReturnDate()));
+
+        if (event.getFineAmount() != null && event.getFineAmount().compareTo(BigDecimal.ZERO) > 0) {
+            BorrowingFineAssessedEvent fineEvent = new BorrowingFineAssessedEvent();
+            fineEvent.setBorrowingId(this.id);
+            fineEvent.setEmployeeId(this.employeeId);
+            fineEvent.setBookId(this.bookId);
+            fineEvent.setBookCopyId(this.bookCopyId);
+            fineEvent.setReason("OVERDUE");
+            fineEvent.setAmount(event.getFineAmount());
+            AggregateLifecycle.apply(fineEvent);   
+        }
+
         AggregateLifecycle.apply(event);
     }
 
