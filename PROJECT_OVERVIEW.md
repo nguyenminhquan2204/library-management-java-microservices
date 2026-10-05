@@ -7,7 +7,7 @@
 | **Loại dự án** | Microservices Java, mô phỏng nghiệp vụ quản lý thư viện (mượn/trả sách) |
 | **Ngôn ngữ / Runtime** | Java 17 |
 | **Framework chính** | Spring Boot `4.1.1`, Spring Cloud `2025.1.3` |
-| **Số lượng service** | 8 (7 service chạy độc lập + 1 thư viện dùng chung) |
+| **Số lượng service** | 9 (8 service chạy độc lập + 1 thư viện dùng chung) |
 | **Pattern kiến trúc nổi bật** | CQRS, Event Sourcing (Axon Framework), Saga (orchestration), API Gateway, Service Discovery |
 | **Xác thực** | OAuth2 / OIDC qua Keycloak, JWT tại Gateway |
 | **Message broker** | Apache Kafka (Confluent) |
@@ -16,13 +16,13 @@
 
 ## 1. Tổng quan
 
-Đây là một hệ thống **microservices** viết bằng Java/Spring Boot, mô phỏng nghiệp vụ **quản lý thư viện**: quản lý sách (`bookservice`), quản lý nhân viên (`employeeservice`), quản lý phiếu mượn sách (`borrowingservice`), quản lý người dùng/xác thực (`userservice`), gửi thông báo email (`notificationservice`), cùng các thành phần hạ tầng dùng chung: service discovery (`discoverserver`), API gateway (`apigateway`) và một thư viện dùng chung (`commonservice`).
+Đây là một hệ thống **microservices** viết bằng Java/Spring Boot, mô phỏng nghiệp vụ **quản lý thư viện**: quản lý sách (`bookservice`), quản lý nhân viên (`employeeservice`), quản lý phiếu mượn sách (`borrowingservice`), quản lý tiền phạt và thu tiền phạt (`paymentservice`), quản lý người dùng/xác thực (`userservice`), gửi thông báo email (`notificationservice`), cùng các thành phần hạ tầng dùng chung: service discovery (`discoverserver`), API gateway (`apigateway`) và một thư viện dùng chung (`commonservice`).
 
 Điểm đặc trưng của dự án là áp dụng **CQRS + Event Sourcing** (thông qua Axon Framework) và **Saga pattern** để xử lý giao dịch phân tán khi mượn sách (phải kiểm tra nhân viên có đang bị kỷ luật/khoá hay không, giữ một bản sao còn trống, và trả lại bản sao nếu có lỗi ở bất kỳ bước nào).
 
 Mỗi đầu sách quản lý nhiều **bản sao vật lý** (`BookCopy`: barcode, vị trí kệ, tình trạng, trạng thái `AVAILABLE / RESERVED / BORROWED / LOST / DAMAGED`). Phiếu mượn gắn với đúng một bản sao, có vòng đời `PENDING → CONFIRMED → RETURNED` (hoặc `FAILED` / `CANCELLED`), và nhiều người mượn cùng lúc không bao giờ lấy trùng bản sao (chi tiết: [book-copy-management.md](book-copy-management.md), kịch bản test tay: [BOOK_COPY_API_TEST.md](BOOK_COPY_API_TEST.md)).
 
-Mỗi phiếu mượn có **hạn trả**; một **cronjob** trong `borrowingservice` tự nhắc trước khi đến hạn, báo quá hạn và tính **tiền phạt**, rồi gửi email qua Kafka → `notificationservice` (chi tiết: [BORROWING_REMINDER.md](BORROWING_REMINDER.md)).
+Mỗi phiếu mượn có **hạn trả**; một **cronjob** trong `borrowingservice` tự nhắc trước khi đến hạn, báo quá hạn và tính **tiền phạt**, rồi gửi email qua Kafka → `notificationservice` (chi tiết: [BORROWING_REMINDER.md](BORROWING_REMINDER.md)). Khi trả sách muộn, tiền phạt được chốt và chuyển sang `paymentservice` thành một **khoản phạt (Fine)**; thủ thư/admin thu tiền tại đây, cho phép trả nhiều lần (chi tiết: mục 5).
 
 Xác thực/uỷ quyền được tách riêng qua **Keycloak** (OAuth2/OIDC), API Gateway đứng trước để định tuyến, xác thực JWT, giới hạn tốc độ (rate limit) và forward thông tin người dùng xuống các service phía sau.
 
@@ -49,6 +49,8 @@ flowchart TB
     KC -. "validate JWT (issuer)" .-> F1
     GW -->|"/books, /employees\n(apiKey + rate limit)"| BS
     GW -->|"/books, /employees\n(apiKey + rate limit)"| ES
+    GW -->|"/borrowing (rate limit)"| BOS
+    GW -->|"/payment (LIBRARIAN / ADMIN)"| PS
     GW -->|"/users (JWT header)"| US
     GW -->|"/public/** (không cần JWT)"| US
 
@@ -58,11 +60,13 @@ flowchart TB
     ES <-. "đăng ký / khám phá" .-> DS
     BOS <-. "đăng ký / khám phá" .-> DS
     US <-. "đăng ký / khám phá" .-> DS
+    PS <-. "đăng ký / khám phá" .-> DS
 
     BS["bookservice :9001\n(CQRS, sách + bản sao)"]
     ES["employeeservice :9002\n(CQRS)"]
     BOS["borrowingservice :9004\n(CQRS + Saga + Cronjob)"]
     US["userservice :9005\n(Postgres)"]
+    PS["paymentservice :9006\n(CQRS, tiền phạt)"]
 
     US -- "Admin API\n(Feign)" --> KC
 
@@ -71,6 +75,8 @@ flowchart TB
     BOS -- "Command / Event / Query" --> AX
     BOS -. "Command giữ / trả bản sao" .-> BS
     BOS -. "Query kiểm tra nhân viên" .-> ES
+    PS -- "Command / Event" --> AX
+    BOS -. "BorrowingFineAssessedEvent" .-> PS
 
     AX[("Axon Server\nEvent Store\n:8024 / :8124 / :8224")]
 
@@ -96,6 +102,7 @@ flowchart TB
 | `employeeservice` | 9002 | Quản lý nhân viên (CQRS) | H2 in-memory (`employeeDB`) | Có Swagger/OpenAPI |
 | `notificationservice` | 9003 | Consumer Kafka, gửi email | — | Kafka consumer + Freemarker template (chào mừng, nhắc hạn trả, quá hạn/tiền phạt) |
 | `borrowingservice` | 9004 | Quản lý phiếu mượn (CQRS + Saga) | H2 in-memory (`borrowingDB`) | Điều phối `BorrowingSaga` (có timeout qua `DeadlineManager`); cronjob `BorrowingReminderJob` nhắc hạn trả / tính tiền phạt |
+| `paymentservice` | 9006 | Quản lý khoản phạt và thu tiền phạt (CQRS + Event Sourcing) | H2 in-memory (`paymentDB`) | Aggregate `FineAggregate`; read model bảng `fines`, `fine_payments`; tự xác thực JWT (resource server) |
 | `userservice` | 9005 | Quản lý user, đăng nhập, tích hợp Keycloak | PostgreSQL (`library_local`) | Gọi Keycloak Admin API qua Feign |
 | `commonservice` | — | Thư viện dùng chung (không chạy độc lập) | — | Exception, ApiResponse, Axon/Kafka/Mail config |
 
@@ -124,7 +131,7 @@ flowchart TB
 - `userservice` dùng Feign client gọi thẳng Keycloak Admin API để **tạo user**, **đổi token** (client-credentials & password grant)
 
 ### Dữ liệu
-- **H2 (in-memory)** — DB tạm cho `bookservice`, `employeeservice`, `borrowingservice` (mỗi service một DB riêng, có bật H2 console)
+- **H2 (in-memory)** — DB tạm cho `bookservice`, `employeeservice`, `borrowingservice`, `paymentservice` (mỗi service một DB riêng, có bật H2 console)
 - **PostgreSQL** — DB chính thức cho `userservice` (`library_local`)
 - **Spring Data JPA** — ORM cho các service có DB quan hệ
 
@@ -151,7 +158,7 @@ flowchart TB
 
 ## 5. Kiến trúc CQRS + Event Sourcing + Saga (điểm nhấn của dự án)
 
-Các service nghiệp vụ chính (`bookservice`, `employeeservice`, `borrowingservice`) đều tách theo 2 luồng:
+Các service nghiệp vụ chính (`bookservice`, `employeeservice`, `borrowingservice`, `paymentservice`) đều tách theo 2 luồng:
 
 - **Command side** (`command/`): `Aggregate` (vd. `BookAggregate`) nhận `Command` → validate → phát ra `Event` → `AggregateLifecycle.apply(event)`. Aggregate tự cập nhật state qua `@EventSourcingHandler`.
 - **Query side** (`query/`): `Projection` lắng nghe event để cập nhật read-model, `QueryController` phục vụ truy vấn qua `QueryGateway`.
@@ -169,6 +176,7 @@ Tất cả event được lưu tập trung ở **Axon Server** (event store), ch
 | Event | `BookCopyReservationFailedEvent` | `bookservice` | `borrowingservice` (saga) — hết sách |
 | Event | `BookCopyBorrowedEvent` | `bookservice` | `bookservice` (read model) |
 | Event | `BookCopyReleasedEvent` | `bookservice` | `bookservice` (read model) |
+| Event | `BorrowingFineAssessedEvent` | `borrowingservice` (khi trả sách muộn) | `paymentservice` — tạo khoản phạt (`CreateFineCommand`) |
 | Query | `GetBookDetailQuery` | `borrowingservice` (projection) | `bookservice` |
 | Query | `GetDetailEmployeeQuery` | `borrowingservice` (saga, projection, cronjob) | `employeeservice` |
 
@@ -261,8 +269,38 @@ Tài liệu đầy đủ: [BORROWING_REMINDER.md](BORROWING_REMINDER.md).
   - **Sắp đến hạn** (trong 2 ngày tới) → `NotifyBorrowingDueSoonCommand` → nhắc **1 lần**.
   - **Quá hạn** → `RecordBorrowingOverdueCommand` → aggregate tính `số ngày trễ × 5.000 VND` → báo **tối đa 1 lần/ngày**.
 - Aggregate quyết định có gửi hay không và lưu lại bằng event (`BorrowingDueSoonNotifiedEvent`, `BorrowingOverdueRecordedEvent`), nên chạy lại job hay chạy nhiều instance đều không gửi trùng. Chỉ khi command thành công, job mới publish `BorrowingNotificationMessage` (JSON) lên topic `borrowing-notification`.
-- Tiền phạt được **chốt** trong `BorrowingReturnedEvent` khi trả sách.
+- Tiền phạt được **chốt** trong `BorrowingReturnedEvent` khi trả sách. Nếu tiền phạt > 0, aggregate phát thêm `BorrowingFineAssessedEvent` (reason `OVERDUE`) để `paymentservice` tạo khoản phạt.
 - `notificationservice` (`BorrowingNotificationConsumer`) render `borrowingDueSoon.ftl` / `borrowingOverdue.ftl` và gửi email tới `email` của nhân viên (trường mới của `employeeservice`). Có retry topic + DLT như các consumer khác.
+
+### Thanh toán tiền phạt (`paymentservice`)
+
+`paymentservice` nhận tiền phạt đã chốt bên `borrowingservice` và quản lý việc thu tiền. Mỗi khoản phạt là một aggregate `FineAggregate` (event sourcing qua Axon Server).
+
+```mermaid
+sequenceDiagram
+    participant BOS as borrowingservice
+    participant H as BorrowingFineAssessedHandler
+    participant F as FineAggregate
+    participant P as PaymentEventsHandler (read model)
+    participant L as Thủ thư / Admin
+
+    BOS->>H: BorrowingFineAssessedEvent (borrowingId, amount, reason)
+    H->>F: CreateFineCommand (fineId = UUID từ borrowingId + reason)
+    F->>P: FineCreatedEvent → bảng fines (UNPAID)
+    L->>F: POST /api/v1/payment/{fineId}/pay
+    F->>P: FinePaidEvent → cộng paidAmount, ghi fine_payments
+    F-->>L: FinePaymentResponse (paidAmount, remainingAmount, status)
+```
+
+- **Tạo khoản phạt**: `BorrowingFineAssessedHandler` sinh `fineId` cố định bằng `UUID.nameUUIDFromBytes(borrowingId + ":" + reason)`, và `CreateFineCommand` dùng `CREATE_IF_MISSING`. Nhận lại cùng một event (replay, gửi trùng) thì không tạo khoản phạt thứ hai. Bảng `fines` cũng có unique `(borrowing_id, reason)`.
+- **Thu tiền** (`PayFineCommand`): cho trả nhiều lần. Aggregate chặn:
+  - khoản phạt đã `PAID` / `WAIVED` → `409`;
+  - số tiền ≤ 0 hoặc lớn hơn số còn nợ → `400`;
+  - `fineId` không tồn tại → `404`.
+- Trạng thái (`FineStatus`): `UNPAID → PARTIALLY_PAID → PAID`. `WAIVED` (miễn phạt) đã có trong enum và entity (`waivedAmount`, `waiveReason`, `waivedBy`) nhưng **chưa có command/API**.
+- Mỗi lần thu tạo một `paymentId` mới; người thu (`collectedBy`) lấy từ `preferred_username` trong JWT. Phương thức: `CASH`, `CREDIT_CARD`, `DEBIT_CARD`, `BANK_TRANSFER`, `MOBILE_PAYMENT`, `ONLINE`.
+- Read model: `fines` (số tiền, `paidAmount`, `waivedAmount`, `currency` mặc định `VND`, `status`, `settledAt`; `remainingAmount` tính khi đọc, không lưu DB) và `fine_payments` (lịch sử từng lần thu). Khi replay event, lần thu đã có trong `fine_payments` sẽ bị bỏ qua để không cộng tiền hai lần.
+- Phân quyền: gateway chỉ cho `LIBRARIAN` / `ADMIN` vào `/api/v1/payment/**`. Service cũng tự xác thực JWT (`ResourceServerSecurityConfig`) và kiểm tra role bằng `@PreAuthorize`.
 
 ## 6. Chuẩn hoá response & xử lý lỗi
 
@@ -328,6 +366,7 @@ Ví dụ response lỗi (validation):
 | PATCH | `/api/v1/borrowing/{borrowingId}/return` | borrowingservice (command) | Trả sách, release đúng bản sao đã mượn (chốt tiền phạt nếu trả muộn) |
 | GET | `/api/v1/borrowing/employeeId/{employeeId}` | borrowingservice (query) | Danh sách phiếu mượn của nhân viên (kèm `dueDate`, `fineAmount`) |
 | POST | `/api/v1/borrowing/reminders/run` | borrowingservice (command) | ADMIN chạy ngay cronjob nhắc hạn / báo quá hạn |
+| POST | `/api/v1/payment/{fineId}/pay` | paymentservice (command) | LIBRARIAN/ADMIN thu tiền phạt (`amount`, `method`, `referenceCode`, `note`); trả được nhiều lần, không vượt số còn nợ |
 | POST | `/api/v1/public/login` | userservice | Đăng nhập (không cần JWT, đi qua Keycloak) |
 | POST | `/api/v1/users` | userservice | Tạo user (đăng ký, tạo cả trên Keycloak) |
 | GET | `/api/v1/users` | userservice | Lấy danh sách user |
@@ -335,9 +374,9 @@ Ví dụ response lỗi (validation):
 | PUT | `/api/v1/users/{id}` | userservice | Cập nhật user |
 | DELETE | `/api/v1/users/{id}` | userservice | Xoá user |
 
-Mọi API ghi của `bookservice` (sách và bản sao) chỉ dành cho role `LIBRARIAN` / `ADMIN`. MEMBER chỉ tạo, trả và xem được phiếu mượn của chính mình (theo attribute `employeeId` trên Keycloak).
+Mọi API ghi của `bookservice` (sách và bản sao) và mọi API của `paymentservice` chỉ dành cho role `LIBRARIAN` / `ADMIN`. MEMBER chỉ tạo, trả và xem được phiếu mượn của chính mình (theo attribute `employeeId` trên Keycloak).
 
-Tất cả request qua `apigateway` (port `8080`) đều được route dựa trên path và (trừ `/api/v1/public/**`) yêu cầu JWT hợp lệ từ Keycloak; route `/books` và `/employees` còn yêu cầu thêm header `apiKey` hợp lệ và bị giới hạn tốc độ 10 req/s (burst 20) qua Redis.
+Tất cả request qua `apigateway` (port `8080`) đều được route dựa trên path và (trừ `/api/v1/public/**`) yêu cầu JWT hợp lệ từ Keycloak; route `/books` và `/employees` còn yêu cầu thêm header `apiKey` hợp lệ. Các route `/books`, `/employees`, `/borrowing`, `/payment` bị giới hạn tốc độ 10 req/s (burst 20) qua Redis.
 
 ## 8. Luồng nghiệp vụ end-to-end — ví dụ "mượn sách"
 
@@ -347,7 +386,7 @@ Tất cả request qua `apigateway` (port `8080`) đều được route dựa tr
 4. API trả về `borrowingId` ngay (phiếu `PENDING`). `BorrowingSaga` bắt sự kiện, kiểm tra nhân viên ở `employeeservice` rồi giữ một bản sao ở `bookservice` như mô tả ở mục 5; nếu không thoả hoặc quá thời gian chờ, phiếu chuyển `FAILED` / `CANCELLED` và bản sao đã giữ (nếu có) được trả lại.
 5. Client gọi `GET /api/v1/borrowing/{borrowingId}` sau 1–2 giây để biết phiếu đã `CONFIRMED` (kèm `bookCopyId`) hay chưa.
 6. Khi giao dịch thành công, một service (Book/Notification, tuỳ luồng thực tế) publish message lên Kafka (`testEmail` / `emailTemplate`).
-7. Hằng ngày, `BorrowingReminderJob` kiểm tra các phiếu chưa trả: nhắc khi sắp đến hạn, báo quá hạn kèm tiền phạt tạm tính (publish lên topic `borrowing-notification`). Khi trả sách muộn, tiền phạt được chốt vào phiếu mượn.
+7. Hằng ngày, `BorrowingReminderJob` kiểm tra các phiếu chưa trả: nhắc khi sắp đến hạn, báo quá hạn kèm tiền phạt tạm tính (publish lên topic `borrowing-notification`). Khi trả sách muộn, tiền phạt được chốt vào phiếu mượn và `paymentservice` tạo khoản phạt tương ứng; thủ thư thu tiền qua `POST /api/v1/payment/{fineId}/pay`.
 8. `notificationservice` (`EventConsumer`, `BorrowingNotificationConsumer`) tiêu thụ message, render email bằng FreeMarker (`emailTemplate.ftl`) hoặc template inline, gửi qua SMTP Gmail; nếu xử lý lỗi, message được đẩy qua **retry topic** (backoff nhân đôi, tối đa 3 lần retry) rồi cuối cùng vào **Dead Letter Topic (DLT)** nếu vẫn thất bại.
 
 ## 9. Hạ tầng & Triển khai
@@ -355,7 +394,7 @@ Tất cả request qua `apigateway` (port `8080`) đều được route dựa tr
 ### Docker Compose (`docker-compose.yml` — môi trường dev/CI)
 Khởi chạy: `discoverserver`, `bookservice`, `apigateway`, `notificationservice`, `axonserver` (event store), `redis`, `zookeeper` + `broker` (Kafka) + `control-center` (giao diện quản trị Kafka), cùng network bridge `microservice-networks`.
 
-> Compose hiện tại **chưa khai báo** `employeeservice`, `borrowingservice`, `userservice` — cần bổ sung service block cho các service này nếu muốn chạy toàn bộ hệ thống chỉ bằng một lệnh `docker compose up`.
+> Compose hiện tại **chưa khai báo** `employeeservice`, `borrowingservice`, `paymentservice`, `userservice` — cần bổ sung service block cho các service này nếu muốn chạy toàn bộ hệ thống chỉ bằng một lệnh `docker compose up`.
 
 ### `docker-compose-provider.yml`
 Chạy riêng **Keycloak** (`start-dev` mode) — dùng để chuẩn bị Identity Provider trước khi chạy các service cần OAuth2.
@@ -387,7 +426,7 @@ cd bookservice && ./mvnw spring-boot:run
 # ... tương tự cho các service còn lại
 ```
 
-Lưu ý: `apigateway`, `commonservice`, `userservice` có file `application.yml.example` / `application.properties.example` — cần copy thành `application.yml` / `application.properties` thật và điền giá trị nhạy cảm (client-id/secret Keycloak, DB credentials) trước khi chạy.
+Lưu ý: `apigateway`, `commonservice`, `userservice`, `paymentservice` có file `application.yml.example` / `application.properties.example` — cần copy thành `application.yml` / `application.properties` thật và điền giá trị nhạy cảm (client-id/secret Keycloak, DB credentials) trước khi chạy.
 
 ## 11. ⚠️ Lưu ý bảo mật & một vài lỗi cấu hình cần xử lý
 
@@ -399,7 +438,7 @@ Trong lúc đọc cấu hình, phát hiện một số vấn đề nên xử lý
   - Khuyến nghị: thu hồi/đổi ngay các credential trên, gỡ khỏi lịch sử git nếu cần (`git filter-repo`/BFG), và chuyển sang biến môi trường/secret manager — chỉ commit file `.example` như đang làm với `userservice`.
 - **`apiKey` tĩnh tại Gateway**: `KeyAuthFilter` so sánh header `apiKey` với một giá trị cấu hình cố định — không xoay vòng (rotate), không phân biệt theo client, dễ bị lộ nếu log request. Cân nhắc thay bằng cơ chế theo client (client id/secret, hoặc chuyển hẳn sang JWT scope) khi lên production.
 - **Typo image Redis**: `docker-compose.yml` khai báo `image: redis:lastest` (đúng phải là `latest`) — tag này không tồn tại nên `docker compose pull/up` cho service `redis` sẽ lỗi.
-- **File `docker-compose.yml` thiếu service**: chưa có block cho `employeeservice`, `borrowingservice`, `userservice` (xem mục 9).
+- **File `docker-compose.yml` thiếu service**: chưa có block cho `employeeservice`, `borrowingservice`, `paymentservice`, `userservice` (xem mục 9).
 - **`k8s.deployment.yaml` chưa hoàn chỉnh**: nhiều lỗi chính tả field YAML (xem mục 9), thiếu ConfigMap/Secret, thiếu manifest cho phần lớn service.
 
 ## 12. Đánh giá nhanh: điểm mạnh & hạn chế
@@ -421,6 +460,9 @@ Trong lúc đọc cấu hình, phát hiện một số vấn đề nên xử lý
 - `BookAggregate` chứa toàn bộ bản sao của một đầu sách: đầu sách có rất nhiều bản sao / lượt mượn sẽ có event stream dài, nên cân nhắc bật snapshot.
 - H2 in-memory cho các service CQRS phù hợp để demo nhưng **mất dữ liệu khi restart** — cần DB thật (Postgres/MySQL) nếu triển khai thật.
 - Một số cấu hình còn hard-code `localhost` (Eureka defaultZone, Redis host) — cần tham số hoá đầy đủ qua biến môi trường cho từng môi trường deploy.
+- `paymentservice` mới có phía command: **chưa có API đọc** (danh sách khoản phạt theo nhân viên / theo phiếu mượn, lịch sử thu tiền), nên thủ thư chưa có cách tra `fineId` qua API. Chưa có API miễn phạt (`WAIVED`) và chưa có test `AggregateTestFixture` cho `FineAggregate`.
+- Khoản phạt chỉ được tạo khi trả sách muộn: sách mất / hỏng (`FineReason.LOST`, `DAMAGED`) hoặc phiếu quá hạn mà chưa trả thì chưa phát sinh khoản phạt nào.
+- Nếu `BorrowingFineAssessedHandler` lỗi (vd. `reason` không khớp `FineReason`), error handler mặc định của Axon chỉ log rồi bỏ qua event, nên khoản phạt có thể bị mất mà không ai biết.
 - Manifest Kubernetes và `docker-compose.yml` chưa đồng bộ với danh sách service thực tế (xem mục 11).
 
 ## 13. Thuật ngữ nhanh (Glossary)
@@ -451,6 +493,7 @@ codes/
 ├── discoverserver/      # Eureka Server
 ├── employeeservice/     # CQRS: quản lý nhân viên
 ├── notificationservice/ # Kafka consumer + gửi email
+├── paymentservice/      # CQRS: khoản phạt + thu tiền phạt
 ├── userservice/         # Quản lý user + tích hợp Keycloak (Postgres)
 ├── docker/              # Config bổ sung cho kafka, keycloak
 ├── scripts/deploy.sh    # Script deploy trên VPS qua SSH

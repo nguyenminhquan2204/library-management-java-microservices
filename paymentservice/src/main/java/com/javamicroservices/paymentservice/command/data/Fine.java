@@ -53,7 +53,7 @@ public class Fine {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal paidAmount = BigDecimal.ZERO;
 
-    @Column(nullable = false, precision = 15, scale = 2)
+    @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal waivedAmount = BigDecimal.ZERO;
 
     @Column(nullable = false, length = 3)
